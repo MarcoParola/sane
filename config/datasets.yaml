@@ -1,0 +1,7 @@
+cifar10:
+  num_classes: 10
+  img_size: 32
+
+cifar100:
+  num_classes: 100
+  img_size: 224

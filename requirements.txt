@@ -1,0 +1,11 @@
+matplotlib
+hydra-core
+wandb
+transformers
+datasets
+seaborn
+scipy
+timm
+detectors
+wandb
+lightning

@@ -1,0 +1,56 @@
+defaults:
+- _self_
+- datasets
+
+data_dir: data
+
+model:
+  name: resnet18
+  
+dataset:
+  name: cifar10
+
+checkpoint: resnet18_cifar10
+
+# sane
+transformer:
+  n_blocks: 1 # original was 8
+  blocksize: 288 # idim & wsize
+  n_head: 1 # original was 16
+  edim: 512 # original was 2048
+  dropout: 0.0
+  bias: False
+  causal: False
+
+training:
+  n_classes: 10
+  stride: 1 # stands for window_size
+  batch_size: 32
+  device: cuda
+  num_workers: 4 
+  loss_reduction: "mean"
+  n_epochs: 1000
+  patience: 50
+
+augmentation:
+  noise_std: 0.01
+  layers_to_noise: ['layer4', 'fc']
+  n_checkpoints: 3
+
+optimizer:
+  lr: 1e-4
+  wd: 3e-9
+  scheduler: "OneCycleLR"
+
+experiment:
+  mode: "base"
+
+log:
+  dir: "./logs"
+  wandb: True
+  tensorboard: False
+
+wandb:
+  entity: marcoparola
+  project: sane-base
+  dir: logs/wandb
