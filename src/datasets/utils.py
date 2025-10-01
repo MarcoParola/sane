@@ -1,7 +1,9 @@
 import torch
 import torchvision
 import numpy as np
-from datasets import load_dataset as load_hf_dataset
+import detectors
+from torchvision import transforms
+from torchvision.datasets import ImageFolder
 
 
 class ImgDataset(torch.utils.data.Dataset):
@@ -55,30 +57,42 @@ def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.
 
     # TINY IMAGENET
     elif dataset == 'tinyimagenet':
-        train = load_hf_dataset("zh-plus/tiny-imagenet", split="train")
-        test = load_hf_dataset("zh-plus/tiny-imagenet", split="valid")
+        train = detectors.create_dataset("tiny_imagenet", split="train")
+        test = detectors.create_dataset("tiny_imagenet", split="val")
+
+        train_transforms_list = [torchvision.transforms.ToTensor()]
+        if img_size is not None:
+            train_transforms_list.append(torchvision.transforms.Resize((img_size, img_size)))
+
+        test_transforms_list = [torchvision.transforms.ToTensor()]
+        if img_size is not None:
+            test_transforms_list.append(torchvision.transforms.Resize((img_size, img_size)))
+
+        train_transforms_list.extend([
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomRotation(20),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+
+        test_transforms_list.extend([
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+
+        train_transforms = torchvision.transforms.Compose(train_transforms_list)
+        test_transforms = torchvision.transforms.Compose(test_transforms_list)
+
+        train = ImageFolder("data/tiny-imagenet-200/train", transform=train_transforms)
+        test = ImageFolder("data/tiny-imagenet-200/val", transform=test_transforms)
         split = int(len(train) * val_split)
         train, val = torch.utils.data.random_split(train, [len(train) - split, split])
         
-        # transform the dataset to apply the transform
-        class HFDatasetWrapper(torch.utils.data.Dataset):
-            def __init__(self, hf_dataset, transform=None):
-                self.hf_dataset = hf_dataset
-                self.transform = transform
-
-            def __len__(self):
-                return len(self.hf_dataset)
-
-            def __getitem__(self, idx):
-                item = self.hf_dataset[idx]
-                img, lbl = item['image'], item['label']
-                if self.transform:
-                    img = self.transform(img)
-                return img, lbl
-
-        train = HFDatasetWrapper(train, transform=transform)
-        val = HFDatasetWrapper(val, transform=transform)
-        test = HFDatasetWrapper(test, transform=transform)
+        return train, val, test
 
     else:
         raise ValueError(f'Unknown dataset: {dataset}')
