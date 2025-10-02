@@ -21,7 +21,7 @@ def load_model(model_name: str, dataset_name: str):
         elif dataset_name == 'cifar100':
             model = timm.create_model("resnet18_cifar100", pretrained=True)
         elif dataset_name == 'tinyimagenet':
-            model = ResNet18(out_dim=200, dropout=0.0)
+            model = ResNet18(out_dim=200)
     elif model_name == 'vit':
         if dataset_name == 'cifar10':
             model = timm.create_model("vit_base_patch16_224_in21k_ft_cifar10", pretrained=True)
