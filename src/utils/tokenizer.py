@@ -92,11 +92,11 @@ class Tokenizer():
         # concatenate all tokens and masks
         tokens = torch.cat(tokens, dim=0)
         masks = torch.cat(masks, dim=0)
-        useful_tokens = masks.sum().item()
+        #useful_tokens = masks.sum().item()
 
-        print(f"Token sequence length: {len(tokens)}")
-        print(f"Total number of tokens: {len(tokens)} x {tokensize} = {len(tokens) * tokensize}")
-        print(f"Useful tokens (no padding): {useful_tokens} ({useful_tokens / masks.numel() * 100:.2f}%)")
+        #print(f"Token sequence length: {len(tokens)}")
+        #print(f"Total number of tokens: {len(tokens)} x {tokensize} = {len(tokens) * tokensize}")
+        #print(f"Useful tokens (no padding): {useful_tokens} ({useful_tokens / masks.numel() * 100:.2f}%)")
 
         # convert position to a tuple of (ndx, idx, jdx)
         pos = [(ndx, idx, jdx) for ndx, (idx, jdx) in enumerate(pos)]
@@ -256,7 +256,7 @@ class Tokenizer():
                 if tempsize > tokensize:
                     tokensize = tempsize
         
-        print(f"\nTokensize: {int(tokensize)}")
+        #print(f"\nTokensize: {int(tokensize)}")
         return int(tokensize)
 
 
