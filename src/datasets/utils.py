@@ -92,7 +92,14 @@ def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.
         split = int(len(train) * val_split)
         train, val = torch.utils.data.random_split(train, [len(train) - split, split])
         
-        return train, val, test
+        # Build mapping: current_classes -> wnids.txt
+        with open("data/tiny-imagenet-200/wnids.txt") as f:
+            trained_classes = [line.strip() for line in f]
+
+        current_classes = test.classes
+        remapping = {current_classes.index(c): trained_classes.index(c) for c in current_classes}
+
+        return train, val, test, remapping
 
     else:
         raise ValueError(f'Unknown dataset: {dataset}')
@@ -101,7 +108,7 @@ def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.
     val = ImgDataset(val)
     test = ImgDataset(test)
 
-    return train, val, test
+    return train, val, test, None
 
 
 if __name__ == "__main__":

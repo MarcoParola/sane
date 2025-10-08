@@ -96,13 +96,16 @@ class TokenizedZooDataset(torch.utils.data.Dataset):
 
         all_tokens, all_masks, all_positions = [], [], []
 
+        counter=0
         for zoo in zoo_models_path:
             zoo_path = Path(zoo)
             for folder in zoo_path.iterdir():
-                if folder.is_dir():
+                if folder.is_dir() and counter<50: # consider only first 50 models for now
                     current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
                     if current_checkpoint_path.exists():
-                        checkpoint = torch.load(current_checkpoint_path)
+                        checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                        counter+=1
+                        print(f"Tokenized {counter} models")
 
                         tokens, masks, positions = tokenizer.tokenize(checkpoint)
                         self.tokens = tokens.detach().clone().cpu()
@@ -112,10 +115,45 @@ class TokenizedZooDataset(torch.utils.data.Dataset):
                         all_tokens.append(tokens)
                         all_masks.append(masks)
                         all_positions.append(positions)
-                    
-        self.tokens = torch.cat(all_tokens, dim=0)
+
+        self.tokens = torch.cat(all_tokens, dim=0) 
+        '''
+        total_len = sum(t.shape[0] for t in all_tokens)
+        dim = all_tokens[0].shape[1]
+        tokens_mm = np.memmap('tokens.dat', dtype='float32', mode='w+', shape=(total_len, dim))
+        offset = 0
+        for t in all_tokens:
+            size = t.shape[0]
+            tokens_mm[offset:offset+size] = t.cpu().numpy()
+            offset += size
+        '''
+        print("Concatenated all tokens")
+
         self.masks = torch.cat(all_masks, dim=0)
+        '''
+        total_len = sum(m.shape[0] for m in all_masks)
+        dim = all_masks[0].shape[1]
+        masks_mm = np.memmap('masks.dat', dtype='float32', mode='w+', shape=(total_len, dim))
+        offset = 0
+        for m in all_masks:
+            size = m.shape[0]
+            masks_mm[offset:offset+size] = m.cpu().numpy()
+            offset += size
+        '''
+        print("Concatenated all masks")
+
         self.positions = torch.cat(all_positions, dim=0)
+        '''
+        total_len = sum(p.shape[0] for p in all_positions)
+        dim = all_positions[0].shape[1]
+        positions_mm = np.memmap('positions.dat', dtype='int32', mode='w+', shape=(total_len, dim))
+        offset = 0
+        for p in all_positions:
+            size = p.shape[0]
+            positions_mm[offset:offset+size] = p.cpu().numpy()
+            offset += size
+        '''
+        print("Concatenated all positions")
     
         self.window_size = min(window_size, self.tokens.shape[0])
         self.stride = stride if stride is not None else self.window_size
@@ -150,8 +188,15 @@ class TokenizedZooDataset(torch.utils.data.Dataset):
                 mkpad = torch.zeros(self.window_size, mk.shape[1], dtype=mk.dtype)
                 pspad = torch.tensor([[last_util_index+tdx+1, fake_layer_index, tdx] for tdx in range(padding_needed)], dtype=ps.dtype)
 
+                tkpad = tkpad.to(tk.device)
+                mkpad = mkpad.to(mk.device)
+                pspad = pspad.to(ps.device)
+
                 tkpad[:tk.shape[0], :] = tk; mkpad[:mk.shape[0], :] = mk; pspad = torch.cat([ps, pspad], dim=0)
                 return tkpad,mkpad,pspad
             raise NotImplemented(f"available methods for window fixing: padding, shift, received: {self.fixwindow}")
         tk, mk, ps = (self.tokens[window_start:window_end, :], self.masks[window_start:window_end, :], self.positions[window_start:window_end, :])
+        #tk = torch.from_numpy(self.tokens_mm[window_start:window_end, :])
+        #mk = torch.from_numpy(self.masks_mm[window_start:window_end, :])
+        #ps = torch.from_numpy(self.positions_mm[window_start:window_end, :])
         return tk,mk,ps

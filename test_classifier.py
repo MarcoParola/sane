@@ -41,7 +41,7 @@ def main(cfg):
     data_dir = cfg.data_dir
 
     # Load dataset
-    train, val, test = load_dataset(dataset_name, data_dir, img_size)
+    train, val, test, remapping = load_dataset(dataset_name, data_dir, img_size)
 
     print(f"\nModel: {model_name} \nDataset: {dataset_name} \nNum Classes: {num_classes} \nImage Size: {img_size} \nBatch Size: {batch_size}")
 
@@ -50,26 +50,13 @@ def main(cfg):
     model.to(device)
     
     # Load the state dictionary
-    #checkpoint = torch.load(f"checkpoints/{model_name}_{dataset_name}.pt", weights_only=False)
-    checkpoint = torch.load(f"checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00115_115_seed=116_2022-08-25_12-19-06/checkpoint_000060/checkpoints", weights_only=False)
+    checkpoint = torch.load(f"checkpoints/{model_name}_{dataset_name}.pt", weights_only=False)
+    #checkpoint = torch.load(f"checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00115_115_seed=116_2022-08-25_12-19-06/checkpoint_000060/checkpoints", weights_only=False)
         
     model.load_state_dict(checkpoint)
     model.eval()
     
-    if dataset_name=="tinyimagenet":
-        # wnids.txt mapping
-        with open("data/tiny-imagenet-200/wnids.txt") as f:
-            trained_classes = [line.strip() for line in f]
-
-        # Current mapping (list in alphabetical order)
-        current_classes = test.classes
-
-        # Build mapping: current_classes -> wnids.txt
-        remapping = {current_classes.index(c): trained_classes.index(c) for c in current_classes}
-
-        test_classifier(model, test, num_classes, batch_size, device, remapping)
-    else:
-        test_classifier(model, test, num_classes, batch_size, device)
+    test_classifier(model, test, num_classes, batch_size, device, remapping)
 
 
 if __name__ == "__main__":
