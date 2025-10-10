@@ -8,29 +8,33 @@ model:
   name: resnet18
   
 dataset:
-  name: cifar10
+  name: tinyimagenet
 
 checkpoint: resnet18_cifar10
 
 # sane
 transformer:
-  n_blocks: 1 # original was 8
+  n_blocks: 2 # original was 8
   blocksize: 288 # idim & wsize
-  n_head: 1 # original was 16
-  edim: 512 # original was 2048
+  n_head: 2 # original was 16
+  edim: 256 # original was 2048
   dropout: 0.0
   bias: False
   causal: False
 
 training:
   n_classes: 10
-  stride: 1 # stands for window_size
+  stride: 4 # stands for window_size
   batch_size: 32
   device: cuda
   num_workers: 4 
   loss_reduction: "mean"
   n_epochs: 1000
   patience: 50
+
+test:
+  test_error: False
+  reconstruction_error: True
 
 augmentation:
   noise_std: 0.01
@@ -44,6 +48,7 @@ optimizer:
 
 experiment:
   mode: "base"
+  zoo: False
 
 log:
   dir: "./logs"
@@ -51,6 +56,6 @@ log:
   tensorboard: False
 
 wandb:
-  entity: marcoparola
+  entity: krys12-universit-di-pisa
   project: sane-base
   dir: logs/wandb

@@ -18,15 +18,15 @@ from lightning.pytorch import Trainer
 def main(cfg):
     # Loading SANE configuration
     stride = cfg.transformer.blocksize // cfg.training.stride
-    log_run = f"sane_{cfg.experiment.mode}.sws{cfg.training.stride}_b{cfg.transformer.n_blocks}_e{cfg.transformer.edim}_h{cfg.transformer.n_head}"
-    run_group, run_name = log_run.split(".")
-    callbacks = list()
-    loggers = get_loggers(cfg, run_group, run_name)
 
     # Load Tokenized Model Weights Dataset
     tokenizer = Tokenizer(cfg.transformer.blocksize)
     # if zoo mode is selected, load zoo weights
     if cfg.experiment.zoo:
+        print("Loading tinyimagenet zoo models ...")
+        mode = "zoo_trained"
+        loss_to_monitor = "val_loss"
+        best_filename = "sane-{epoch:02d}-{val_loss:.4f}"
         zoo_models_path = []
         tinyimagenet_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
         zoo_models_path.append(tinyimagenet_path)
@@ -37,10 +37,22 @@ def main(cfg):
         testloader = torch.utils.data.DataLoader(dataset=test_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
     # else, load single model weights
     else:
+        print("Loading single resnet18_tinyimagenet model ...")
+        mode = "single_model_trained"
+        loss_to_monitor = "train_loss"
+        best_filename = "sane-{epoch:02d}-{train_loss:.4f}"
         original_checkpoint = torch.load(Path(f"checkpoints/{cfg.checkpoint}.pt"), weights_only=False)
+        #original_checkpoint_location = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00100_100_seed=101_2022-08-25_03-53-17/checkpoint_000060/checkpoints"
+        #original_checkpoint = torch.load(original_checkpoint_location, weights_only=False)
         trainset = TokenizedModelWeightDataset(original_checkpoint, tokenizer, cfg.transformer.blocksize, stride=stride)
         trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=cfg.training.batch_size, shuffle=True, num_workers=cfg.training.num_workers, persistent_workers=True)
 
+    log_run = f"sane_{cfg.experiment.mode}.{mode}_sws{cfg.training.stride}_b{cfg.transformer.n_blocks}_e{cfg.transformer.edim}_h{cfg.transformer.n_head}"
+    run_group, run_name = log_run.split(".")
+    callbacks = list()
+    loggers = get_loggers(cfg, run_group, run_name)
+
+    print("Initializing SANE model ...")
     sane_model = Sane(
         conf = cfg,
         idim = cfg.transformer.blocksize,
@@ -52,9 +64,9 @@ def main(cfg):
 
     # Checkpoint callback to save the best model
     checkpoint_callback = ModelCheckpoint(
-        dirpath=Path("out/sane_model", *log_run.split("."), "best"),
-        filename="sane-{epoch:02d}-{val_loss:.4f}",
-        monitor="val_loss",
+        dirpath=Path(f"out/{mode}", "sane_model", *log_run.split("."), "best"),
+        filename=best_filename,
+        monitor=loss_to_monitor,
         mode="min",
         save_top_k=1
     )
@@ -68,25 +80,17 @@ def main(cfg):
     )
     if cfg.experiment.zoo:
         trainer.fit(sane_model, train_dataloaders=trainloader, val_dataloaders=valloader)
-    else:
-        trainer.fit(sane_model, train_dataloaders=trainloader)
+    #else:
+    #    trainer.fit(sane_model, train_dataloaders=trainloader)
 
     # Reconstruction/Test
     if cfg.experiment.zoo:
         trainer.test(sane_model, dataloaders=testloader)
     else:
-        testset = TokenizedModelWeightDataset(original_checkpoint, tokenizer, cfg.transformer.blocksize)
-        testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers, persistent_workers=True)
-        trainer.test(sane_model, dataloaders=testloader)
-        recontokens, positions, embeddings = sane_model.get_test_outputs()
-        injected_checkpoint = tokenizer.detokenize(recontokens, positions, original_checkpoint)
-        store_location = Path("out", *log_run.split(".")) if log_run is not None else Path("out/sane")
-        store_location.mkdir(777, parents=True, exist_ok=True)
-        injected_checkpoint_location = store_location.joinpath("injections")
-        injected_checkpoint_location.mkdir(777, parents=True, exist_ok=True)
-        injected_checkpoint_location = injected_checkpoint_location.joinpath("injected.pt")
-        injected_checkpoint_location.unlink(missing_ok=True); torch.save(injected_checkpoint, injected_checkpoint_location)
-        
+        sane_checkpoint = torch.load("checkpoints/sane_model/sws4_b2_e256_h2/best/single_tiny55_sane-epoch=998-train_loss=0.0000.ckpt", weights_only=False)
+        sane_model.load_state_dict(sane_checkpoint['state_dict'])
+        original_checkpoint = torch.load("checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00055_55_seed=56_2022-08-23_23-59-10/checkpoint_000060/checkpoints", weights_only=False)
+
         # classification task preparation
         model_name = cfg.model.name
         dataset_name = cfg.dataset.name
@@ -97,26 +101,41 @@ def main(cfg):
             img_size = cfg[dataset_name].img_size
         data_dir = cfg.data_dir
 
-        train, val, test = load_dataset(dataset_name, data_dir, img_size)
+        train, val, test, remapping = load_dataset(dataset_name, data_dir, img_size)
         classifier_network = load_model(model_name, dataset_name).to(cfg.training.device)
-        injected_checkpoint = torch.load(injected_checkpoint_location, weights_only=False)
 
+        print(f"Testing reconstruction for {model_name} on {dataset_name} ...")
+        testset = TokenizedModelWeightDataset(original_checkpoint, tokenizer, cfg.transformer.blocksize)
+        testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers, persistent_workers=True)
+        trainer.test(sane_model, dataloaders=testloader)
+        recontokens, positions, embeddings = sane_model.get_test_outputs()
+        injected_checkpoint = tokenizer.detokenize(recontokens, positions, original_checkpoint)
+        injected_checkpoint_location = Path(f"checkpoints/injections/single_model_trained/{model_name}_{dataset_name}")
+        injected_checkpoint_location.mkdir(777, parents=True, exist_ok=True)
+        injected_checkpoint_location = injected_checkpoint_location.joinpath(f"injected.pt")
+        injected_checkpoint_location.unlink(missing_ok=True); torch.save(injected_checkpoint, injected_checkpoint_location)
+        injected_checkpoint = torch.load(injected_checkpoint_location, weights_only=False)
+        
         # classification task
         print("\nOriginal Model:")
         classifier_network.load_state_dict(original_checkpoint)
-        original_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device)
+        if dataset_name == 'tinyimagenet':
+            classifier_network.eval()
+        original_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device, remapping)
         print("Injected Model:")
         classifier_network.load_state_dict(injected_checkpoint)
-        injected_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device)
+        if dataset_name == 'tinyimagenet':
+            classifier_network.eval()
+        injected_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device, remapping)
 
         # layer by layer histogram plotting
         if trainer.logger:
             print("\nLogging...")
             wandb_run = trainer.logger.experiment
-            for idx, layer, figure, mse in layers_histogram(original_checkpoint, injected_checkpoint):
-                if idx != -1: 
-                    wandb_run.log({f"{idx}.{layer}/plot": WBImage(figure), f"MSEs/{idx}.{layer}": mse})
-                else: wandb_run.log({f"Test/{layer}": WBImage(figure)}) # layer becomes the plot's title
+            #for idx, layer, figure, mse in layers_histogram(original_checkpoint, injected_checkpoint):
+            #    if idx != -1: 
+            #        wandb_run.log({f"{idx}.{layer}/plot": WBImage(figure), f"MSEs/{idx}.{layer}": mse})
+            #    else: wandb_run.log({f"Test/{layer}": WBImage(figure)}) # layer becomes the plot's title
             
             wandb_run.log({f"Test/Original_{k}": v[0] for k,v in original_metrics.todict().items()})
             wandb_run.log({f"Test/Injected_{k}": v[0] for k,v in injected_metrics.todict().items()})
