@@ -7,29 +7,29 @@ from src.datasets.weights.tokenized_model_weights import TokenizedZooDataset, To
 from src.utils.tokenizer import Tokenizer
 from pathlib import Path
 from test_classifier import test_classifier 
-from src.utils.plots import layers_histogram
+# from src.utils.plots import layers_histogram
 from src.datasets.utils import load_dataset
 from src.models.utils import load_model
 from src.utils.log import get_loggers
-from wandb import Image as WBImage
+# from wandb import Image as WBImage
 import wandb
 from lightning.pytorch.loggers import WandbLogger
 
 
-def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, counter, original_metrics):
+def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics):
     testset = TokenizedModelWeightDataset(original_checkpoint, tokenizer, cfg.transformer.blocksize)
     testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers, persistent_workers=True)
     trainer.test(sane_model, dataloaders=testloader)
     recontokens, positions, embeddings = sane_model.get_test_outputs()
     injected_checkpoint = tokenizer.detokenize(recontokens, positions, original_checkpoint)
-    injected_checkpoint_location = Path(f"checkpoints/injections/single_model_trained/resnet18_tinyimagenet")
+    injected_checkpoint_location = Path(cfg.test.injection_path)
     injected_checkpoint_location.mkdir(777, parents=True, exist_ok=True)
-    injected_checkpoint_location = injected_checkpoint_location.joinpath(f"injected_{counter}.pt")
+    injected_checkpoint_location = injected_checkpoint_location.joinpath(f"injected_{i}.pt")
     injected_checkpoint_location.unlink(missing_ok=True); torch.save(injected_checkpoint, injected_checkpoint_location)
     injected_checkpoint = torch.load(injected_checkpoint_location, weights_only=False)
 
     # classification task
-    print(f"Injected Model {counter}:")
+    print(f"Injected Model {i}:")
     classifier_network.load_state_dict(injected_checkpoint)
     classifier_network.eval()
     injected_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
@@ -73,8 +73,7 @@ def main(cfg):
     )
 
     print("Loading pretrained Sane weights...")
-    sane_checkpoint_path = "checkpoints/sane_model/sws4_b2_e256_h2/best/zoo_50_models_sane-epoch=960-val_loss=0.0000.ckpt"
-    sane_checkpoint = torch.load(sane_checkpoint_path, map_location="cpu", weights_only=False)
+    sane_checkpoint = torch.load(cfg.test.sane_checkpoint_path, map_location="cpu", weights_only=False)
     sane_model.load_state_dict(sane_checkpoint['state_dict'])
 
     print("\nLoading Tokenized Zoo test set...")
@@ -82,11 +81,12 @@ def main(cfg):
     zoo_models_path = []
     tinyimagenet_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
     zoo_models_path.append(tinyimagenet_path)
+    
+    test_indices = list(range(61,72))
 
     if cfg.test.test_error:
         print("\nTesting Sane model...")
-        dataset = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride)
-        train_set, val_set, test_set = torch.utils.data.random_split(dataset, [int(0.7*len(dataset)), int(0.15*len(dataset)), len(dataset) - int(0.7*len(dataset)) - int(0.15*len(dataset))])
+        test_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
         testloader = torch.utils.data.DataLoader(dataset=test_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
         trainer.test(sane_model, dataloaders=testloader)
 
@@ -109,31 +109,74 @@ def main(cfg):
         classifier_network = load_model(model_name, dataset_name).to(device)
 
         print("\nTesting reconstruction and predictions")
-        counter = -1
-        for zoo in zoo_models_path:
-            zoo_path = Path(zoo)
-            for folder in zoo_path.iterdir():
-                if folder.is_dir():
-                    counter += 1
-                    if 0 <= counter <= 25:
-                        current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
-                        if current_checkpoint_path.exists():
-                            wandb.finish()  # ensure previous run is closed
-                            wandb_logger = WandbLogger(project="test_sane", name=f"model_{counter}")
-                            trainer = Trainer(logger=wandb_logger)
-                            checkpoint = torch.load(current_checkpoint_path, weights_only=False)
-                            
-                            # test original model only once
-                            if counter == 0:
-                                print("\nOriginal Model:")
-                                classifier_network.load_state_dict(checkpoint)
-                                classifier_network.eval()
-                                original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
 
-                            print(f"\nReconstructing model {counter}")
-                            reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, counter, original_metrics)
-                    elif counter > 8:
-                        break
+        if cfg.experiment.mode.zoo:
+            for zoo in zoo_models_path:
+                zoo_path = Path(zoo)
+                # Collect all folders of the current zoo
+                model_folders = []
+                for folder in zoo_path.iterdir():
+                    if folder.is_dir():
+                        model_folders.append(folder)
+                # Iterate on selected split indices
+                counter = 0
+                for i in test_indices:
+                    counter += 1
+                    folder = model_folders[i]
+                    current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
+                    if current_checkpoint_path.exists():
+                        wandb.finish()  # ensure previous run is closed
+                        wandb_logger = WandbLogger(project="test_sane", name=f"model_{i}")
+                        trainer = Trainer(logger=wandb_logger)
+                        checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                        
+                        # test original model only once
+                        if counter == 1:
+                            print("\nOriginal Model:")
+                            classifier_network.load_state_dict(checkpoint)
+                            classifier_network.eval()
+                            original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
+
+                        print(f"\nReconstructing model {i}")
+                        reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+
+        else:
+            original_checkpoint = torch.load(Path(f"checkpoints/{cfg.checkpoint}.pt"), weights_only=False)
+            testset = TokenizedModelWeightDataset(original_checkpoint, tokenizer, cfg.transformer.blocksize)
+            testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers, persistent_workers=True)
+            trainer.test(sane_model, dataloaders=testloader)
+            recontokens, positions, embeddings = sane_model.get_test_outputs()
+            injected_checkpoint = tokenizer.detokenize(recontokens, positions, original_checkpoint)
+            injected_checkpoint_location = Path(f"checkpoints/injections/single_model_trained/{model_name}_{dataset_name}")
+            injected_checkpoint_location.mkdir(777, parents=True, exist_ok=True)
+            injected_checkpoint_location = injected_checkpoint_location.joinpath(f"injected.pt")
+            injected_checkpoint_location.unlink(missing_ok=True); torch.save(injected_checkpoint, injected_checkpoint_location)
+            injected_checkpoint = torch.load(injected_checkpoint_location, weights_only=False)
+            
+            # classification task
+            print("\nOriginal Model:")
+            classifier_network.load_state_dict(original_checkpoint)
+            if dataset_name == 'tinyimagenet':
+                classifier_network.eval()
+            original_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device, remapping)
+            print("Injected Model:")
+            classifier_network.load_state_dict(injected_checkpoint)
+            if dataset_name == 'tinyimagenet':
+                classifier_network.eval()
+            injected_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device, remapping)
+
+            # layer by layer histogram plotting
+            if trainer.logger:
+                print("\nLogging...")
+                wandb_run = trainer.logger.experiment
+                #for idx, layer, figure, mse in layers_histogram(original_checkpoint, injected_checkpoint):
+                #    if idx != -1: 
+                #        wandb_run.log({f"{idx}.{layer}/plot": WBImage(figure), f"MSEs/{idx}.{layer}": mse})
+                #    else: wandb_run.log({f"Test/{layer}": WBImage(figure)}) # layer becomes the plot's title
+                
+                wandb_run.log({f"Test/Original_{k}": v[0] for k,v in original_metrics.todict().items()})
+                wandb_run.log({f"Test/Injected_{k}": v[0] for k,v in injected_metrics.todict().items()})
+                wandb_run.finish()
 
 
 if __name__ == "__main__":

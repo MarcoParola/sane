@@ -35,6 +35,8 @@ training:
 test:
   test_error: False
   reconstruction_error: True
+  sane_checkpoint_path: "checkpoints/sane_model/sws4_b2_e256_h2/best/zoo_augmented_70_models_patience50_sane-epoch=182-val_loss=0.0000.ckpt"
+  injection_path: "checkpoints/injections/zoo_trained_augmented"
 
 augmentation:
   noise_std: 0.01
