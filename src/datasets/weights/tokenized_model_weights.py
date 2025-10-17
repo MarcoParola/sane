@@ -41,7 +41,7 @@ class TokenizedModelWeightDataset(torch.utils.data.Dataset):
     def __len__(self):
         nwindows = (self.tokens.shape[0] - self.window_size) // self.stride + 1
         
-        # numero token in ultima finestra (per ora parametri settati per avere exceeding = 0)
+        # number of tokens in the last window
         exceeding = (self.tokens.shape[0] - self.window_size) % self.stride
         
         return nwindows + (1 if exceeding else 0)
@@ -81,7 +81,7 @@ class TokenizedZooDataset(torch.utils.data.Dataset):
 
     def __init__(
         self, zoo_models_path: list[str], tokenizer: Tokenizer, window_size: int = 1, 
-        stride: int = None, fix_window: str = "padding"
+        stride: int = None, fix_window: str = "padding", split_indices: list[int] = None,  noise_percentage: float = 0.0
     ):
         '''
         ### Arguments
@@ -91,30 +91,46 @@ class TokenizedZooDataset(torch.utils.data.Dataset):
             - stride: as in convolutional layer, sets the sliding step of the window
             - fix_window: either "shift" or "padding". Allows to select a method for handling last incomplete window either
             by moving the last window starting point back, to match the window_size (shift) or by zero-padding the remaining part
+            - split_indices: list of indices to select which models to consider from the zoo
+            - noise_percentage: percentage of noise to be added to the tokens, to augment the dataset
         '''
         assert window_size > 0, f"{window_size} invalid as window size, at least 1 token must be present in the window"
 
         all_tokens, all_masks, all_positions = [], [], []
 
-        counter=0
         for zoo in zoo_models_path:
             zoo_path = Path(zoo)
+            # Collect all folders of the current zoo
+            model_folders = []
             for folder in zoo_path.iterdir():
-                if folder.is_dir() and counter<50: # consider only first 50 models for now
-                    current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
-                    if current_checkpoint_path.exists():
-                        checkpoint = torch.load(current_checkpoint_path, weights_only=False)
-                        counter+=1
-                        print(f"Tokenized {counter} models")
-
-                        tokens, masks, positions = tokenizer.tokenize(checkpoint)
-                        self.tokens = tokens.detach().clone().cpu()
-                        self.masks = masks.detach().clone().cpu()
-                        self.positions = positions.detach().clone().cpu()
-                        assert self.tokens.shape[0] == self.masks.shape[0] and self.masks.shape[0] == self.positions.shape[0], f"Inconsistency in received checkpoint: tshape - {self.tokens.shape}, mshape - {self.masks.shape}, pshape - {self.positions.shape}"
-                        all_tokens.append(tokens)
-                        all_masks.append(masks)
-                        all_positions.append(positions)
+                if folder.is_dir():
+                    model_folders.append(folder)
+            # Iterate on selected split indices
+            counter = 0
+            for i in split_indices:
+                folder = model_folders[i]
+                current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
+                if current_checkpoint_path.exists():
+                    checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                    # Add noise to the checkpoint if noise_percentage > 0
+                    if noise_percentage > 0.0:
+                        for key, value in checkpoint.items():
+                            if isinstance(value, torch.Tensor):
+                                if value.is_floating_point():
+                                    noise = (torch.rand_like(value) * 2 - 1) * noise_percentage * value
+                                    checkpoint[key] = value + noise
+                    
+                    counter+=1
+                    print(f"\rTokenized {counter} models", end='', flush=True)
+                    tokens, masks, positions = tokenizer.tokenize(checkpoint)
+                    self.tokens = tokens.detach().clone().cpu()
+                    self.masks = masks.detach().clone().cpu()
+                    self.positions = positions.detach().clone().cpu()
+                    assert self.tokens.shape[0] == self.masks.shape[0] and self.masks.shape[0] == self.positions.shape[0], f"Inconsistency in received checkpoint: tshape - {self.tokens.shape}, mshape - {self.masks.shape}, pshape - {self.positions.shape}"
+                    all_tokens.append(tokens)
+                    all_masks.append(masks)
+                    all_positions.append(positions)
+            print()
 
         self.tokens = torch.cat(all_tokens, dim=0) 
         '''

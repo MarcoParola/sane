@@ -4,11 +4,11 @@ from src.models.sane.sane import Sane
 from src.datasets.weights.tokenized_model_weights import TokenizedModelWeightDataset, TokenizedZooDataset
 from src.utils.tokenizer import Tokenizer
 from test_classifier import test_classifier 
-from src.utils.plots import layers_histogram
+# from src.utils.plots import layers_histogram
 from src.datasets.utils import load_dataset
 from src.models.utils import load_model
 from src.utils.log import get_loggers
-from wandb import Image as WBImage
+# from wandb import Image as WBImage
 from pathlib import Path
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch import Trainer
@@ -30,8 +30,21 @@ def main(cfg):
         zoo_models_path = []
         tinyimagenet_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
         zoo_models_path.append(tinyimagenet_path)
-        dataset = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride)
-        train_set, val_set, test_set = torch.utils.data.random_split(dataset, [int(0.7*len(dataset)), int(0.15*len(dataset)), len(dataset) - int(0.7*len(dataset)) - int(0.15*len(dataset))])
+        train_indices = list(range(0,50))
+        val_indices = list(range(50,61))
+        test_indices = list(range(61,72))
+        print("Loading training models...")
+        if cfg.experiment.mode == "base":
+            mode = mode + "_base"
+            train_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices)
+        elif cfg.experiment.mode == "augmented":
+            print(f"Training on augmented zoo dataset with noise of {cfg.experiment.noise_percentage*100}%...")
+            mode = mode + "_augmented"
+            train_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices, noise_percentage=cfg.experiment.noise_percentage)
+        print("Loading validation models...")
+        val_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=val_indices)
+        print("Loading testing models...")
+        test_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
         trainloader = torch.utils.data.DataLoader(dataset=train_set, batch_size=cfg.training.batch_size, shuffle=True, num_workers=0, persistent_workers=False)
         valloader = torch.utils.data.DataLoader(dataset=val_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
         testloader = torch.utils.data.DataLoader(dataset=test_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
@@ -80,16 +93,16 @@ def main(cfg):
     )
     if cfg.experiment.zoo:
         trainer.fit(sane_model, train_dataloaders=trainloader, val_dataloaders=valloader)
-    #else:
-    #    trainer.fit(sane_model, train_dataloaders=trainloader)
+    else:
+        trainer.fit(sane_model, train_dataloaders=trainloader)
 
     # Reconstruction/Test
     if cfg.experiment.zoo:
         trainer.test(sane_model, dataloaders=testloader)
     else:
-        sane_checkpoint = torch.load("checkpoints/sane_model/sws4_b2_e256_h2/best/single_tiny55_sane-epoch=998-train_loss=0.0000.ckpt", weights_only=False)
-        sane_model.load_state_dict(sane_checkpoint['state_dict'])
-        original_checkpoint = torch.load("checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00055_55_seed=56_2022-08-23_23-59-10/checkpoint_000060/checkpoints", weights_only=False)
+        #sane_checkpoint = torch.load("checkpoints/sane_model/sws4_b2_e256_h2/best/single_tiny55_sane-epoch=998-train_loss=0.0000.ckpt", weights_only=False)
+        #sane_model.load_state_dict(sane_checkpoint['state_dict'])
+        #original_checkpoint = torch.load("checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00055_55_seed=56_2022-08-23_23-59-10/checkpoint_000060/checkpoints", weights_only=False)
 
         # classification task preparation
         model_name = cfg.model.name

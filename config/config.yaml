@@ -30,7 +30,7 @@ training:
   num_workers: 4 
   loss_reduction: "mean"
   n_epochs: 1000
-  patience: 50
+  patience: 10
 
 test:
   test_error: False
@@ -47,8 +47,9 @@ optimizer:
   scheduler: "OneCycleLR"
 
 experiment:
-  mode: "base"
-  zoo: False
+  mode: "augmented" # "base" or "augmented"
+  zoo: True
+  noise_percentage: 0.02
 
 log:
   dir: "./logs"
