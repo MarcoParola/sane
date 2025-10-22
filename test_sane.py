@@ -47,6 +47,8 @@ def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, san
         wandb_run.log({f"Test/Injected_{k}": v[0] for k,v in injected_metrics.todict().items()})
         wandb_run.finish()
 
+    return injected_metrics.accuracy()
+
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
 def main(cfg):
@@ -110,7 +112,7 @@ def main(cfg):
 
         print("\nTesting reconstruction and predictions")
 
-        if cfg.experiment.mode.zoo:
+        if cfg.experiment.zoo:
             for zoo in zoo_models_path:
                 zoo_path = Path(zoo)
                 # Collect all folders of the current zoo
@@ -120,13 +122,17 @@ def main(cfg):
                         model_folders.append(folder)
                 # Iterate on selected split indices
                 counter = 0
+                accuracies = []
                 for i in test_indices:
                     counter += 1
                     folder = model_folders[i]
                     current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
                     if current_checkpoint_path.exists():
                         wandb.finish()  # ensure previous run is closed
-                        wandb_logger = WandbLogger(project="test_sane", name=f"model_{i}")
+                        if cfg.experiment.mode == "augmented":
+                            wandb_logger = WandbLogger(project="test_sane", name=f"augmentation_{cfg.experiment.noise_percentage*100}%_model_{i}")
+                        else:
+                            wandb_logger = WandbLogger(project="test_sane", name=f"model_{i}")
                         trainer = Trainer(logger=wandb_logger)
                         checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                         
@@ -138,7 +144,9 @@ def main(cfg):
                             original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
 
                         print(f"\nReconstructing model {i}")
-                        reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+                        accuracy = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+                        accuracies.append(accuracy)
+                print(f"\nAverage accuracy: {sum(accuracies) / len(accuracies)}")
 
         else:
             original_checkpoint = torch.load(Path(f"checkpoints/{cfg.checkpoint}.pt"), weights_only=False)
