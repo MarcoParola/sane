@@ -10,8 +10,9 @@ from src.models.utils import load_model
 from src.utils.log import get_loggers
 # from wandb import Image as WBImage
 from pathlib import Path
-from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -39,7 +40,7 @@ def main(cfg):
             train_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices)
         elif cfg.experiment.mode == "augmented":
             print(f"Training on augmented zoo dataset with noise of {cfg.experiment.noise_percentage*100}%...")
-            mode = mode + "_augmented"
+            mode = mode + "_augmented_" + str(int(cfg.experiment.noise_percentage*100))
             train_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices, noise_percentage=cfg.experiment.noise_percentage)
         print("Loading validation models...")
         val_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=val_indices)
@@ -84,6 +85,15 @@ def main(cfg):
         save_top_k=1
     )
     callbacks.append(checkpoint_callback)
+
+    # Early stopping callback
+    early_stopping_callback = EarlyStopping(
+        monitor = loss_to_monitor,
+        patience = cfg.training.patience,
+        mode = "min",
+        verbose = True
+    )
+    callbacks.append(early_stopping_callback) 
 
     # Training
     trainer = Trainer(
