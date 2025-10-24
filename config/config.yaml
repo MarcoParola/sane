@@ -5,10 +5,10 @@ defaults:
 data_dir: data
 
 model:
-  name: resnet18
+  name: cnn
   
 dataset:
-  name: tinyimagenet
+  name: cifar10
 
 checkpoint: resnet18_cifar10
 
@@ -35,8 +35,8 @@ training:
 test:
   test_error: False
   reconstruction_error: True
-  sane_checkpoint_path: "checkpoints/sane_model/sws4_b2_e256_h2/best/zoo_augmented_70_models_patience50_sane-epoch=182-val_loss=0.0000.ckpt"
-  injection_path: "checkpoints/injections/zoo_trained_augmented"
+  sane_checkpoint_path: "out/zoo_trained_cnn_base/sane_model/sane_base/zoo_trained_cnn_base_sws4_b2_e256_h2/best/sane-epoch=991-val_loss=0.0000.ckpt"
+  injection_path: "checkpoints/injections/zoo_trained_cnn"
 
 augmentation:
   noise_std: 0.01
@@ -51,6 +51,7 @@ optimizer:
 experiment:
   mode: "augmented" # "base" or "augmented"
   zoo: True
+  zoo_models: "cnn" # "cnn" or "tinyimagenet_resnet18"
   noise_percentage: 0.02
 
 log:

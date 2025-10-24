@@ -78,13 +78,18 @@ def main(cfg):
     sane_checkpoint = torch.load(cfg.test.sane_checkpoint_path, map_location="cpu", weights_only=False)
     sane_model.load_state_dict(sane_checkpoint['state_dict'])
 
-    print("\nLoading Tokenized Zoo test set...")
     tokenizer = Tokenizer(cfg.transformer.blocksize)
     zoo_models_path = []
-    tinyimagenet_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
-    zoo_models_path.append(tinyimagenet_path)
-    
-    test_indices = list(range(61,72))
+    if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
+        print("Loading tinyimagenet zoo models ...")
+        tinyimagenet_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
+        zoo_models_path.append(tinyimagenet_path)
+        test_indices = list(range(61,72))
+    elif cfg.experiment.zoo_models == "cnn":
+        print("Loading cnn zoo models ...")
+        cnn_zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
+        zoo_models_path.append(cnn_zoo_path)
+        test_indices = list(range(850,1000))
 
     if cfg.test.test_error:
         print("\nTesting Sane model...")
@@ -93,6 +98,10 @@ def main(cfg):
         trainer.test(sane_model, dataloaders=testloader)
 
     if cfg.test.reconstruction_error:
+        if cfg.experiment.zoo_models == "cnn":
+            test_indices = list(range(850,860))  # limit to 10 models for faster testing
+            sane_model.projection_head.head[0] = torch.nn.Linear(6144, 30, bias=False)  # adjust projection head for CNNs weights size
+
         # classification task preparation
         model_name = cfg.model.name
         dataset_name = cfg.dataset.name
@@ -105,9 +114,9 @@ def main(cfg):
         device = cfg.training.device
         data_dir = cfg.data_dir
 
-        train, val, test, remapping = load_dataset(dataset_name, data_dir, img_size)
+        train, val, test, remapping = load_dataset(dataset_name, data_dir, model_name, img_size)
 
-        print(f"\nModel: {model_name} \nDataset: {dataset_name} \nNum Classes: {n_classes} \nImage Size: {img_size} \nBatch Size: {batch_size}")
+        print(f"\nModel: {model_name} \nDataset: {dataset_name}")
         classifier_network = load_model(model_name, dataset_name).to(device)
 
         print("\nTesting reconstruction and predictions")
@@ -126,7 +135,10 @@ def main(cfg):
                 for i in test_indices:
                     counter += 1
                     folder = model_folders[i]
-                    current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
+                    if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
+                        current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
+                    if cfg.experiment.zoo_models == "cnn":
+                        current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
                     if current_checkpoint_path.exists():
                         wandb.finish()  # ensure previous run is closed
                         if cfg.experiment.mode == "augmented":
@@ -164,12 +176,12 @@ def main(cfg):
             # classification task
             print("\nOriginal Model:")
             classifier_network.load_state_dict(original_checkpoint)
-            if dataset_name == 'tinyimagenet':
+            if dataset_name == 'tinyimagenet' or model_name == 'cnn':
                 classifier_network.eval()
             original_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device, remapping)
             print("Injected Model:")
             classifier_network.load_state_dict(injected_checkpoint)
-            if dataset_name == 'tinyimagenet':
+            if dataset_name == 'tinyimagenet' or model_name == 'cnn':
                 classifier_network.eval()
             injected_metrics = test_classifier(classifier_network, test, n_classes, cfg.training.batch_size, cfg.training.device, remapping)
 

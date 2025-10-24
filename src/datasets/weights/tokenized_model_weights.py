@@ -109,7 +109,7 @@ class TokenizedZooDataset(torch.utils.data.Dataset):
             counter = 0
             for i in split_indices:
                 folder = model_folders[i]
-                current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
+                current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
                 if current_checkpoint_path.exists():
                     checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                     # Add noise to the checkpoint if noise_percentage > 0
