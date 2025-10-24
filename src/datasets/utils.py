@@ -27,7 +27,7 @@ class ImgDataset(torch.utils.data.Dataset):
         return img, lbl
 
 
-def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.15):
+def load_dataset(dataset, data_dir, model=None, img_size=None, val_split=0.15, test_split=0.15):
     train, val, test = None, None, None
 
     torch.manual_seed(42)
@@ -41,11 +41,23 @@ def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.
 
     # CIFAR-10
     if dataset == 'cifar10':
+        if model == "cnn":
+            print("\nUsing CNN specific transforms for CIFAR-10")
+            transform = transforms.Compose(
+            [
+                transforms.Resize((28, 28)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+
         train = torchvision.datasets.CIFAR10(data_dir, train=True, download=True, transform=transform)
         test = torchvision.datasets.CIFAR10(data_dir, train=False, download=True, transform=transform)
 
         split = int(len(train) * val_split)
         train, val = torch.utils.data.random_split(train, [len(train) - split, split])
+
+        if model == "cnn":
+            return train, val, test, None
 
     # CIFAR-100
     elif dataset == 'cifar100':

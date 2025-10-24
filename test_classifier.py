@@ -41,20 +41,24 @@ def main(cfg):
     data_dir = cfg.data_dir
 
     # Load dataset
-    train, val, test, remapping = load_dataset(dataset_name, data_dir, img_size)
+    train, val, test, remapping = load_dataset(dataset_name, data_dir, model_name, img_size)
 
-    print(f"\nModel: {model_name} \nDataset: {dataset_name} \nNum Classes: {num_classes} \nImage Size: {img_size} \nBatch Size: {batch_size}")
+    print(f"\nModel: {model_name} \nDataset: {dataset_name}")
 
     # Load model architecture
     model = load_model(model_name, dataset_name)
     model.to(device)
     
     # Load the state dictionary
-    checkpoint = torch.load(f"checkpoints/{model_name}_{dataset_name}.pt", weights_only=False)
-    #checkpoint = torch.load(f"checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00115_115_seed=116_2022-08-25_12-19-06/checkpoint_000060/checkpoints", weights_only=False)
-        
+    #checkpoint = torch.load(f"checkpoints/{model_name}_{dataset_name}_injected.pt", weights_only=False)
+    #checkpoint = torch.load("checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset/NN_tune_trainable_dbca4_00050_50_seed=51_2022-08-23_21-28-42/checkpoint_000060/checkpoints", weights_only=False)
+    #checkpoint = torch.load("checkpoints/injections/single_model_trained/resnet18_tinyimagenet/injected_100.pt", weights_only=False) 
+    #checkpoint = torch.load("checkpoints/tune_zoo_cifar10_uniform_small/NN_tune_trainable_86fd7_00000_0_seed=1_2021-09-25_11-41-33/checkpoint_000050/checkpoints", weights_only=False)
+    checkpoint = torch.load("checkpoints/tune_zoo_cifar10_uniform_small/NN_tune_trainable_86fd7_00986_986_seed=987_2021-09-27_00-21-18/checkpoint_000050/checkpoints", weights_only=False)
+
     model.load_state_dict(checkpoint)
-    model.eval()
+    if dataset_name == "tinyimagenet" or model_name == "cnn":
+        model.eval()
     
     test_classifier(model, test, num_classes, batch_size, device, remapping)
 
