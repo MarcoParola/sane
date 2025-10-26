@@ -49,7 +49,7 @@ optimizer:
   scheduler: "OneCycleLR"
 
 experiment:
-  mode: "augmented" # "base" or "augmented"
+  mode: "base" # "base" or "augmented"
   zoo: True
   zoo_models: "cnn" # "cnn" or "tinyimagenet_resnet18"
   noise_percentage: 0.02

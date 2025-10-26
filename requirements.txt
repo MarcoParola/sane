@@ -9,3 +9,5 @@ timm
 detectors
 wandb
 lightning
+jax
+jaxlib
