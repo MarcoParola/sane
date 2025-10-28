@@ -2,7 +2,7 @@ import hydra
 import torch
 import wandb
 from src.models.sane.sane import Sane
-from src.datasets.weights.tokenized_model_weights import TokenizedModelWeightDataset, TokenizedZooDataset
+from src.datasets.weights.tokenized_model_weights import TokenizedModelWeightDataset, TokenizedAlignedZooDataset
 from src.utils.tokenizer import Tokenizer
 from test_classifier import test_classifier 
 # from src.utils.plots import layers_histogram
@@ -14,6 +14,7 @@ from pathlib import Path
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import EarlyStopping
+from src.utils.weight_matching import permute_model_zoo
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -31,33 +32,36 @@ def main(cfg):
         zoo_models_path = []
         if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
             print("Loading tinyimagenet zoo models ...")
-            tinyimagenet_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
-            zoo_models_path.append(tinyimagenet_path)
+            zoo_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
+            zoo_models_path.append(zoo_path)
             mode = mode + "_tinyimagenet_resnet18"
             train_indices = list(range(0,50))
             val_indices = list(range(50,61))
             test_indices = list(range(61,72))
         elif cfg.experiment.zoo_models == "cnn":
             print("Loading cnn zoo models ...")
-            cnn_zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
-            zoo_models_path.append(cnn_zoo_path)
+            zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
+            zoo_models_path.append(zoo_path)
             mode = mode + "_cnn"
             train_indices = list(range(0,700))
             val_indices = list(range(700,850))
             test_indices = list(range(850,1000))
+
+        print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
+        aligned_models = permute_model_zoo(zoo_path)
         
         print("Loading training models...")
         if cfg.experiment.mode == "base":
             mode = mode + "_base"
-            train_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices)
+            train_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices)
         elif cfg.experiment.mode == "augmented":
             print(f"Training on augmented zoo dataset with noise of {cfg.experiment.noise_percentage*100}%...")
             mode = mode + "_augmented_" + str(int(cfg.experiment.noise_percentage*100))
-            train_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices, noise_percentage=cfg.experiment.noise_percentage)
+            train_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices, noise_percentage=cfg.experiment.noise_percentage)
         print("Loading validation models...")
-        val_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=val_indices)
+        val_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=val_indices)
         print("Loading testing models...")
-        test_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
+        test_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
         trainloader = torch.utils.data.DataLoader(dataset=train_set, batch_size=cfg.training.batch_size, shuffle=True, num_workers=0, persistent_workers=False)
         valloader = torch.utils.data.DataLoader(dataset=val_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
         testloader = torch.utils.data.DataLoader(dataset=test_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)

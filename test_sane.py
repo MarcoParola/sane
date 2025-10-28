@@ -3,7 +3,7 @@ from src.models.sane.sane import Sane
 import hydra
 from lightning.pytorch import Trainer
 from src.utils.log import get_loggers
-from src.datasets.weights.tokenized_model_weights import TokenizedZooDataset, TokenizedModelWeightDataset
+from src.datasets.weights.tokenized_model_weights import TokenizedModelWeightDataset, TokenizedAlignedZooDataset
 from src.utils.tokenizer import Tokenizer
 from pathlib import Path
 from test_classifier import test_classifier 
@@ -14,6 +14,7 @@ from src.utils.log import get_loggers
 # from wandb import Image as WBImage
 import wandb
 from lightning.pytorch.loggers import WandbLogger
+from src.utils.weight_matching import permute_model_zoo
 
 
 def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics):
@@ -82,24 +83,27 @@ def main(cfg):
     zoo_models_path = []
     if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
         print("Loading tinyimagenet zoo models ...")
-        tinyimagenet_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
-        zoo_models_path.append(tinyimagenet_path)
+        zoo_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
+        zoo_models_path.append(zoo_path)
         test_indices = list(range(61,72))
     elif cfg.experiment.zoo_models == "cnn":
         print("Loading cnn zoo models ...")
-        cnn_zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
-        zoo_models_path.append(cnn_zoo_path)
+        zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
+        zoo_models_path.append(zoo_path)
         test_indices = list(range(850,1000))
+
+    print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
+    aligned_models = permute_model_zoo(zoo_path)
 
     if cfg.test.test_error:
         print("\nTesting Sane model...")
-        test_set = TokenizedZooDataset(zoo_models_path, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
+        test_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
         testloader = torch.utils.data.DataLoader(dataset=test_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
         trainer.test(sane_model, dataloaders=testloader)
 
     if cfg.test.reconstruction_error:
         if cfg.experiment.zoo_models == "cnn":
-            test_indices = list(range(850,860))  # limit to 10 models for faster testing
+            test_indices = list(range(860,880))  # limit to 10 models for faster testing
             sane_model.projection_head.head[0] = torch.nn.Linear(6144, 30, bias=False)  # adjust projection head for CNNs weights size
 
         # classification task preparation
@@ -122,43 +126,31 @@ def main(cfg):
         print("\nTesting reconstruction and predictions")
 
         if cfg.experiment.zoo:
-            for zoo in zoo_models_path:
-                zoo_path = Path(zoo)
-                # Collect all folders of the current zoo
-                model_folders = []
-                for folder in zoo_path.iterdir():
-                    if folder.is_dir():
-                        model_folders.append(folder)
-                # Iterate on selected split indices
-                counter = 0
-                accuracies = []
-                for i in test_indices:
-                    counter += 1
-                    folder = model_folders[i]
-                    if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
-                        current_checkpoint_path = folder / "checkpoint_000060/checkpoints"
-                    if cfg.experiment.zoo_models == "cnn":
-                        current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
-                    if current_checkpoint_path.exists():
-                        wandb.finish()  # ensure previous run is closed
-                        if cfg.experiment.mode == "augmented":
-                            wandb_logger = WandbLogger(project="test_sane", name=f"augmentation_{cfg.experiment.noise_percentage*100}%_model_{i}")
-                        else:
-                            wandb_logger = WandbLogger(project="test_sane", name=f"model_{i}")
-                        trainer = Trainer(logger=wandb_logger)
-                        checkpoint = torch.load(current_checkpoint_path, weights_only=False)
-                        
-                        # test original model only once
-                        if counter == 1:
-                            print("\nOriginal Model:")
-                            classifier_network.load_state_dict(checkpoint)
-                            classifier_network.eval()
-                            original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
+            # Iterate on selected split indices
+            counter = 0
+            accuracies = []
+            for i in test_indices:
+                counter += 1
+                checkpoint = aligned_models[i]
+                wandb.finish()  # ensure previous run is closed
+                if cfg.experiment.mode == "augmented":
+                    wandb_logger = WandbLogger(project="test_sane", name=f"augmentation_{cfg.experiment.noise_percentage*100}%_model_{i}")
+                else:
+                    wandb_logger = WandbLogger(project="test_sane", name=f"model_{i}")
+                trainer = Trainer(logger=wandb_logger)
+                
+                # test original model only once
+                #if counter == 1:
+                print("\nOriginal Model:")
+                classifier_network.load_state_dict(checkpoint)
+                classifier_network.eval()
+                original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
 
-                        print(f"\nReconstructing model {i}")
-                        accuracy = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
-                        accuracies.append(accuracy)
-                print(f"\nAverage accuracy: {sum(accuracies) / len(accuracies)}")
+                print(f"\nReconstructing model {i}")
+                accuracy = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+                accuracies.append(accuracy)
+            
+            print(f"\nAverage accuracy: {sum(accuracies) / len(accuracies)}")
 
         else:
             original_checkpoint = torch.load(Path(f"checkpoints/{cfg.checkpoint}.pt"), weights_only=False)
