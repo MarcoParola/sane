@@ -5,7 +5,7 @@ defaults:
 data_dir: data
 
 model:
-  name: cnn
+  name: cnn-l
   
 dataset:
   name: cifar10

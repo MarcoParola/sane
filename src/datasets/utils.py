@@ -41,10 +41,14 @@ def load_dataset(dataset, data_dir, model=None, img_size=None, val_split=0.15, t
 
     # CIFAR-10
     if dataset == 'cifar10':
-        if model == "cnn":
-            print("\nUsing CNN specific transforms for CIFAR-10")
+        if model == "cnn-s":
             transform = transforms.Compose([
                 transforms.Resize((28, 28)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+        elif model == "cnn-l":
+            transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
             ])
@@ -95,8 +99,12 @@ def load_dataset(dataset, data_dir, model=None, img_size=None, val_split=0.15, t
 
     # STL10
     elif dataset == 'stl10':
+        if model == "cnn-s":
+            resize_dim = 28
+        else:
+            resize_dim = 32
         transform = transforms.Compose([
-            transforms.Resize((28,28)),
+            transforms.Resize((resize_dim, resize_dim)),
             transforms.ToTensor(),
             transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
         ])
