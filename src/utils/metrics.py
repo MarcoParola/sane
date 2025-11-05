@@ -64,3 +64,7 @@ class ClassificationMetrics():
         precision = self.precision()
         recall = self.recall()
         return 2*precision*recall / (precision + recall)
+
+    @staticmethod
+    def relative_error(original_metric: float, recon_metric: float) -> float:
+        return abs(original_metric - recon_metric) / original_metric
