@@ -2,7 +2,7 @@ import timm
 import detectors
 import torch
 from src.models.resnet.resnet import ResNet18
-from src.models.cnn.cnn import CNN
+from src.models.cnn.cnn import SmallCNN, LargeCNN
 
 def load_model(model_name: str, dataset_name: str):
     """
@@ -28,9 +28,18 @@ def load_model(model_name: str, dataset_name: str):
             model = timm.create_model("vit_base_patch16_224_in21k_ft_cifar10", pretrained=True)
         elif dataset_name == 'cifar100':
             model = timm.create_model("vit_base_patch16_224_in21k_ft_cifar100", pretrained = True)
-    elif model_name == 'cnn':
+    elif model_name == 'cnn-s':
         if dataset_name == 'cifar10':
-            model = CNN()
+            model = SmallCNN(3, "gelu", 0, "kaiming_uniform")
+        elif dataset_name == 'stl10':
+            model = SmallCNN(3, "tanh", 0, "kaiming_uniform")
+        elif dataset_name == 'svhn' or dataset_name=='mnist':
+            model = SmallCNN(1, "tanh", 0, "uniform")
+    elif model_name == 'cnn-l':
+        if dataset_name == 'cifar10':
+            model = LargeCNN(3, "gelu", 0, "kaiming_uniform")
+        elif dataset_name == 'stl10':
+            model = LargeCNN(3, "tanh", 0, "kaiming_uniform")
 
     return model
 
