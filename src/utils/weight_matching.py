@@ -3,8 +3,7 @@ from scipy.optimize import linear_sum_assignment
 from typing import NamedTuple, Dict
 from collections import defaultdict
 from pathlib import Path
-from src.models.cnn.cnn import CNN
-
+from src.models.utils import load_model
 
 class PermutationSpec(NamedTuple):
     perm_to_axes: dict
@@ -95,7 +94,7 @@ def weight_matching(ps: PermutationSpec, params_a: Dict[str, torch.Tensor], para
     return perm
 
 
-def permute_model_zoo(zoo_path: str, device='cpu'):
+def permute_model_zoo(zoo_path: str, model_name: str, dataset_name: str, device='cpu'):
     # Load model zoo checkpoints
     zoo_path = Path(zoo_path)
     model_zoo = []
@@ -104,7 +103,7 @@ def permute_model_zoo(zoo_path: str, device='cpu'):
         if folder.is_dir():
             current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
             if current_checkpoint_path.exists():
-                model = CNN()
+                model = load_model(model_name, dataset_name)
                 checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                 model.load_state_dict(checkpoint)
                 counter = counter+1
@@ -139,16 +138,15 @@ if __name__ == "__main__":
 
     from test_classifier import test_classifier
     from src.datasets.utils import load_dataset
-    from src.models.utils import load_model
-
-    cnn_zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
-    aligned_state_dicts = permute_model_zoo(cnn_zoo_path)
 
     model_name = "cnn"
     dataset_name="cifar10"
     num_classes = 10
     batch_size=32
     device = "cuda"
+
+    cnn_zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
+    aligned_state_dicts = permute_model_zoo(cnn_zoo_path, model_name, dataset_name, device=device)
 
     train, val, test, remapping = load_dataset(dataset_name, "data", model_name, 32)
     model = load_model(model_name, dataset_name)

@@ -26,29 +26,28 @@ def main(cfg):
     tokenizer = Tokenizer(cfg.transformer.blocksize)
     # if zoo mode is selected, load zoo weights
     if cfg.experiment.zoo:
-        mode = "zoo_trained"
+        mode = "zoo"
         loss_to_monitor = "val_loss"
         best_filename = "sane-{epoch:02d}-{val_loss:.4f}"
-        zoo_models_path = []
-        if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
-            print("Loading tinyimagenet zoo models ...")
-            zoo_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
-            zoo_models_path.append(zoo_path)
-            mode = mode + "_tinyimagenet_resnet18"
-            train_indices = list(range(0,50))
-            val_indices = list(range(50,61))
-            test_indices = list(range(61,72))
-        elif cfg.experiment.zoo_models == "cnn":
-            print("Loading cnn zoo models ...")
-            zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
-            zoo_models_path.append(zoo_path)
-            mode = mode + "_cnn"
-            train_indices = list(range(0,700))
-            val_indices = list(range(700,850))
-            test_indices = list(range(850,1000))
+        print(f"Loading {cfg.model.name}_{cfg.dataset.name} zoo models ...")
+        zoo_name = cfg.model.name + "_" + cfg.dataset.name
+        zoo_path = cfg[zoo_name].zoo_path
 
         print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
-        aligned_models = permute_model_zoo(zoo_path)
+        aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
+
+        mode = mode + "_" + zoo_name
+        train_indices = list(range(0,700))
+        val_indices = list(range(700,850))
+        test_indices = list(range(850,1000))
+
+        #if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
+        #    print("Loading tinyimagenet zoo models ...")
+        #    zoo_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
+        #    mode = mode + "_tinyimagenet_resnet18"
+        #    train_indices = list(range(0,50))
+        #    val_indices = list(range(50,61))
+        #    test_indices = list(range(61,72))        
         
         print("Loading training models...")
         if cfg.experiment.mode == "base":
