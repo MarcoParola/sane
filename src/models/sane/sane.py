@@ -11,11 +11,12 @@ class Sane(L.LightningModule):
     def __init__(self, conf: dict = None,
                  idim: int = 288, edim: int = 2048, n_head: int = 16, n_blocks: int = 8,
                  latdim: int = 128, wsize: int = 256, dropout: float = 0.0,
-                 max_positions: list[int] = [55000, 100, 550]
+                 max_positions: list[int] = [55000, 100, 550], positional_emb: bool = False
                  ):
         super().__init__()
         self.save_hyperparameters()
         self.conf = conf
+        self.positional_emb = positional_emb
 
         # model
         self.tokenizer = torch.nn.Linear(idim, edim)
@@ -55,19 +56,21 @@ class Sane(L.LightningModule):
     def encode(self, x: torch.Tensor, p: torch.Tensor, m: torch.Tensor = None):
         # get a token from x
         x = self.tokenizer(x)
-        # add positional encoding
-        x = self.pe(x, p)
+        # add positional encoding if enabled
+        if self.positional_emb:
+            x = self.pe(x, p)
         x = self.dropout(x)
         x = self.transformer_encoder(x,m)
         x = self.encoder_comp(x)
-        # return compressed encoding of token+posemb
+        # return compressed encoding of token(+posemb)
         return x
     
     def decode(self, z: torch.Tensor, p: torch.Tensor, m: torch.Tensor = None):
         # decode compressed encoding of token+posemb
         z = self.decoder_comp(z)
-        # add positional encoding
-        z = self.pe(z, p)
+        # add positional encoding if enabled
+        if self.positional_emb:
+            z = self.pe(z, p)
         z = self.dropout(z)
         z = self.transfomer_decoder(z,m)
         z = self.detokenizer(z)
@@ -88,7 +91,7 @@ class Sane(L.LightningModule):
         t, m, p = batch
         z, y, zp = self(t, p, m=None)
         loss = self.criterion(y, t, m)
-        self.log(f"{stage}_loss", loss, on_epoch=True, prog_bar=True)
+        self.log(f"{stage}_loss", loss, on_epoch=True, on_step=False, prog_bar=True)
         return loss 
 
     def training_step(self, batch, batch_idx):
@@ -109,7 +112,8 @@ class Sane(L.LightningModule):
         t, m, p = batch
         z, y, zp = self(t, p, m=None)
         self._test_reconwindows.append(y.detach().cpu().reshape(y.shape[0]*y.shape[1], -1))
-        self._test_positions.append(p.detach().cpu().reshape(p.shape[0]*p.shape[1], -1))
+        if self.positional_emb:
+            self._test_positions.append(p.detach().cpu().reshape(p.shape[0]*p.shape[1], -1))
         self._test_embeddings.append(z.detach().cpu().reshape(z.shape[0]*z.shape[1], -1))
 
     def configure_optimizers(self):

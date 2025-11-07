@@ -15,6 +15,7 @@ from src.utils.log import get_loggers
 import wandb
 from lightning.pytorch.loggers import WandbLogger
 from src.utils.weight_matching import permute_model_zoo
+from src.utils.metrics import ClassificationMetrics
 
 
 def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics):
@@ -22,7 +23,7 @@ def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, san
     testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers, persistent_workers=True)
     trainer.test(sane_model, dataloaders=testloader)
     recontokens, positions, embeddings = sane_model.get_test_outputs()
-    injected_checkpoint = tokenizer.detokenize(recontokens, positions, original_checkpoint)
+    injected_checkpoint = tokenizer.detokenize(recontokens, positions, original_checkpoint, ignore_pos=True)
     injected_checkpoint_location = Path(cfg.test.injection_path)
     injected_checkpoint_location.mkdir(777, parents=True, exist_ok=True)
     injected_checkpoint_location = injected_checkpoint_location.joinpath(f"injected_{i}.pt")
@@ -48,7 +49,7 @@ def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, san
         wandb_run.log({f"Test/Injected_{k}": v[0] for k,v in injected_metrics.todict().items()})
         wandb_run.finish()
 
-    return injected_metrics.accuracy()
+    return original_metrics.accuracy(), injected_metrics.accuracy()
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -93,7 +94,7 @@ def main(cfg):
         test_indices = list(range(850,1000))
 
     print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
-    aligned_models = permute_model_zoo(zoo_path)
+    aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
 
     if cfg.test.test_error:
         print("\nTesting Sane model...")
@@ -128,7 +129,7 @@ def main(cfg):
         if cfg.experiment.zoo:
             # Iterate on selected split indices
             counter = 0
-            accuracies = []
+            relative_errors = []
             for i in test_indices:
                 counter += 1
                 checkpoint = aligned_models[i]
@@ -147,10 +148,11 @@ def main(cfg):
                 original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
 
                 print(f"\nReconstructing model {i}")
-                accuracy = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
-                accuracies.append(accuracy)
+                original_acc, injected_acc = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+                current_relative_error = ClassificationMetrics.relative_error(original_acc, injected_acc)
+                relative_errors.append(current_relative_error)
             
-            print(f"\nAverage accuracy: {sum(accuracies) / len(accuracies)}")
+            print(f"\nAverage relative error: {sum(relative_errors) / len(relative_errors)}")
 
         else:
             original_checkpoint = torch.load(Path(f"checkpoints/{cfg.checkpoint}.pt"), weights_only=False)

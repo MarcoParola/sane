@@ -90,7 +90,7 @@ class TokenizedZooDataset(torch.utils.data.Dataset):
             - window_size: number of tokens to be considered in each sample
             - stride: as in convolutional layer, sets the sliding step of the window
             - fix_window: either "shift" or "padding". Allows to select a method for handling last incomplete window either
-            by moving the last window starting point back, to match the window_size (shift) or by zero-padding the remaining part
+              by moving the last window starting point back, to match the window_size (shift) or by zero-padding the remaining part
             - split_indices: list of indices to select which models to consider from the zoo
             - noise_percentage: percentage of noise to be added to the tokens, to augment the dataset
         '''
@@ -225,7 +225,7 @@ class TokenizedAlignedZooDataset(torch.utils.data.Dataset):
 
     def __init__(
         self, aligned_zoo: list[dict[str, torch.Tensor]], tokenizer: Tokenizer, window_size: int = 1, 
-        stride: int = None, fix_window: str = "padding", split_indices: list[int] = None,  noise_percentage: float = 0.0
+        stride: int = None, fix_window: str = "padding", split_indices: list[int] = None,  noise_percentage: float = 0.0, positional_emb: bool = False
     ):
         '''
         ### Arguments
@@ -234,9 +234,10 @@ class TokenizedAlignedZooDataset(torch.utils.data.Dataset):
             - window_size: number of tokens to be considered in each sample
             - stride: as in convolutional layer, sets the sliding step of the window
             - fix_window: either "shift" or "padding". Allows to select a method for handling last incomplete window either
-            by moving the last window starting point back, to match the window_size (shift) or by zero-padding the remaining part
+              by moving the last window starting point back, to match the window_size (shift) or by zero-padding the remaining part
             - split_indices: list of indices to select which models to consider from the zoo
             - noise_percentage: percentage of noise to be added to the tokens, to augment the dataset
+            - positional_emb: whether to return positional embeddings along with tokens and masks
         '''
         assert window_size > 0, f"{window_size} invalid as window size, at least 1 token must be present in the window"
 
@@ -289,22 +290,24 @@ class TokenizedAlignedZooDataset(torch.utils.data.Dataset):
         '''
         print("Concatenated all masks")
 
-        self.positions = torch.cat(all_positions, dim=0)
-        '''
-        total_len = sum(p.shape[0] for p in all_positions)
-        dim = all_positions[0].shape[1]
-        positions_mm = np.memmap('positions.dat', dtype='int32', mode='w+', shape=(total_len, dim))
-        offset = 0
-        for p in all_positions:
-            size = p.shape[0]
-            positions_mm[offset:offset+size] = p.cpu().numpy()
-            offset += size
-        '''
-        print("Concatenated all positions")
+        if positional_emb:
+            self.positions = torch.cat(all_positions, dim=0)
+            '''
+            total_len = sum(p.shape[0] for p in all_positions)
+            dim = all_positions[0].shape[1]
+            positions_mm = np.memmap('positions.dat', dtype='int32', mode='w+', shape=(total_len, dim))
+            offset = 0
+            for p in all_positions:
+                size = p.shape[0]
+                positions_mm[offset:offset+size] = p.cpu().numpy()
+                offset += size
+            '''
+            print("Concatenated all positions")
     
         self.window_size = min(window_size, self.tokens.shape[0])
         self.stride = stride if stride is not None else self.window_size
         self.fixwindow = fix_window
+        self.positional_emb = positional_emb
 
     def __len__(self):
         nwindows = (self.tokens.shape[0] - self.window_size) // self.stride + 1
@@ -324,26 +327,39 @@ class TokenizedAlignedZooDataset(torch.utils.data.Dataset):
                 window_start -= (self.window_size + window_start - window_end)
                 window_start = max(0, window_start)
                 window_end = window_start + self.window_size
-                tk, mk, ps = (self.tokens[window_start:window_end, :], self.masks[window_start:window_end, :], self.positions[window_start:window_end, :])
-                return tk,mk,ps
+                tk, mk = self.tokens[window_start:window_end, :], self.masks[window_start:window_end, :]
+                if self.positional_emb:
+                    ps = self.positions[window_start:window_end, :]
+                else:
+                    ps = torch.zeros_like(self.positions[window_start:window_end, :])
+                return tk,mk,ps 
             if self.fixwindow == "padding":
-                tk, mk, ps = (self.tokens[window_start:window_end, :], self.masks[window_start:window_end, :], self.positions[window_start:window_end, :])
                 padding_needed = self.window_size - (window_end - window_start)
-                last_util_index = ps[-1, 0].item(); fake_layer_index = ps[-1, 1]+1
                 
+                tk, mk = self.tokens[window_start:window_end, :], self.masks[window_start:window_end, :]
                 tkpad = torch.zeros(self.window_size, tk.shape[1], dtype=tk.dtype)
                 mkpad = torch.zeros(self.window_size, mk.shape[1], dtype=mk.dtype)
-                pspad = torch.tensor([[last_util_index+tdx+1, fake_layer_index, tdx] for tdx in range(padding_needed)], dtype=ps.dtype)
-
                 tkpad = tkpad.to(tk.device)
                 mkpad = mkpad.to(mk.device)
-                pspad = pspad.to(ps.device)
+                tkpad[:tk.shape[0], :] = tk; mkpad[:mk.shape[0], :] = mk; 
 
-                tkpad[:tk.shape[0], :] = tk; mkpad[:mk.shape[0], :] = mk; pspad = torch.cat([ps, pspad], dim=0)
+                if self.positional_emb:
+                    ps = self.positions[window_start:window_end, :]
+                    last_util_index = ps[-1, 0].item(); fake_layer_index = ps[-1, 1]+1
+                    pspad = torch.tensor([[last_util_index+tdx+1, fake_layer_index, tdx] for tdx in range(padding_needed)], dtype=ps.dtype)
+                    pspad = pspad.to(ps.device)
+                    pspad = torch.cat([ps, pspad], dim=0)
+                else:
+                    # Return zeros of the same shape as the window
+                    pspad = torch.zeros(self.window_size, 3, dtype=self.masks.dtype, device=self.masks.device)
                 return tkpad,mkpad,pspad
             raise NotImplemented(f"available methods for window fixing: padding, shift, received: {self.fixwindow}")
-        tk, mk, ps = (self.tokens[window_start:window_end, :], self.masks[window_start:window_end, :], self.positions[window_start:window_end, :])
+        tk, mk = self.tokens[window_start:window_end, :], self.masks[window_start:window_end, :]
         #tk = torch.from_numpy(self.tokens_mm[window_start:window_end, :])
         #mk = torch.from_numpy(self.masks_mm[window_start:window_end, :])
-        #ps = torch.from_numpy(self.positions_mm[window_start:window_end, :])
+        if self.positional_emb:
+            ps = self.positions[window_start:window_end, :]
+            #ps = torch.from_numpy(self.positions_mm[window_start:window_end, :])
+        else:
+            ps = torch.zeros_like(self.positions[window_start:window_end, :])
         return tk,mk,ps
