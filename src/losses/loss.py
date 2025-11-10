@@ -114,6 +114,23 @@ class MaskedReconLoss(torch.nn.Module):
     #     self.loss_mean = out_mean["loss_recon"]
 
 
+class NormalizedMaskedReconLoss(torch.nn.Module):
+    def __init__(self, reduction: str):
+        super(NormalizedMaskedReconLoss, self).__init__()
+        self.mse = torch.nn.MSELoss(reduction=reduction)
+    
+    def forward(self, output: torch.Tensor, target: torch.Tensor, mask: torch.Tensor):
+        assert (
+            output.shape == target.shape == mask.shape
+        ), f"MSE loss error: prediction and target don't have the same shape. output {output.shape} vs target {target.shape} vs mask {mask.shape}"
+
+        eps = 1e-8
+
+        loss = self.mse(mask*output, target)
+        loss = loss / (torch.mean(target**2) + eps)        
+        return loss
+
+
 class GammaContrastReconLoss(torch.nn.Module):
     def __init__(
         self, gamma: float, reduction: str, temperature: float, contrast: str = "simclr", 

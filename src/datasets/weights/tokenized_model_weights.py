@@ -290,18 +290,18 @@ class TokenizedAlignedZooDataset(torch.utils.data.Dataset):
         '''
         print("Concatenated all masks")
 
+        self.positions = torch.cat(all_positions, dim=0)
+        '''
+        total_len = sum(p.shape[0] for p in all_positions)
+        dim = all_positions[0].shape[1]
+        positions_mm = np.memmap('positions.dat', dtype='int32', mode='w+', shape=(total_len, dim))
+        offset = 0
+        for p in all_positions:
+            size = p.shape[0]
+            positions_mm[offset:offset+size] = p.cpu().numpy()
+            offset += size
+            '''
         if positional_emb:
-            self.positions = torch.cat(all_positions, dim=0)
-            '''
-            total_len = sum(p.shape[0] for p in all_positions)
-            dim = all_positions[0].shape[1]
-            positions_mm = np.memmap('positions.dat', dtype='int32', mode='w+', shape=(total_len, dim))
-            offset = 0
-            for p in all_positions:
-                size = p.shape[0]
-                positions_mm[offset:offset+size] = p.cpu().numpy()
-                offset += size
-            '''
             print("Concatenated all positions")
     
         self.window_size = min(window_size, self.tokens.shape[0])

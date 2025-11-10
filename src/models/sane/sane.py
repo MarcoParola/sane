@@ -2,7 +2,7 @@ import torch
 import math
 import lightning as L
 from src.models.transformers.gpt2 import GPTransformer
-from src.losses.loss import MaskedReconLoss
+from src.losses.loss import MaskedReconLoss, NormalizedMaskedReconLoss
 from src.models.sane.positional_embs import PositionalEmbs
 from src.models.sane.projection_head import ProjectionHead
 
@@ -30,7 +30,8 @@ class Sane(L.LightningModule):
         self.dropout = torch.nn.Dropout(dropout)
 
         # loss
-        self.criterion = MaskedReconLoss(conf.training.loss_reduction)
+        self.criterion = NormalizedMaskedReconLoss(conf.training.loss_reduction)
+        #self.criterion = MaskedReconLoss(conf.training.loss_reduction)
             
         # taken from Kaparthy's GPT2 implementation:
         self.apply(self._init_weights)
