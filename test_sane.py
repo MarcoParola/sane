@@ -81,52 +81,44 @@ def main(cfg):
     sane_model.load_state_dict(sane_checkpoint['state_dict'])
 
     tokenizer = Tokenizer(cfg.transformer.blocksize)
-    zoo_models_path = []
-    if cfg.experiment.zoo_models == "tinyimagenet_resnet18":
-        print("Loading tinyimagenet zoo models ...")
-        zoo_path = "checkpoints/tiny-imagenet_resnet18_kaiming_uniform_subset"
-        zoo_models_path.append(zoo_path)
-        test_indices = list(range(61,72))
-    elif cfg.experiment.zoo_models == "cnn":
-        print("Loading cnn zoo models ...")
-        zoo_path = "checkpoints/tune_zoo_cifar10_uniform_small"
-        zoo_models_path.append(zoo_path)
-        test_indices = list(range(850,1000))
 
-    print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
-    aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
+    if cfg.experiment.zoo:
+        zoo_name = cfg.model.name + "_" + cfg.dataset.name
+        zoo_path = cfg[zoo_name].zoo_path
+    
+        print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
+        aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
 
-    if cfg.test.test_error:
-        print("\nTesting Sane model...")
-        test_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
-        testloader = torch.utils.data.DataLoader(dataset=test_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
-        trainer.test(sane_model, dataloaders=testloader)
+        if cfg.test.test_error:
+            print("\nTesting Sane model...")
+            test_indices = list(range(850,1000))
+            test_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
+            testloader = torch.utils.data.DataLoader(dataset=test_set, batch_size=cfg.training.batch_size, shuffle=False, num_workers=0, persistent_workers=False)
+            trainer.test(sane_model, dataloaders=testloader)
 
-    if cfg.test.reconstruction_error:
-        if cfg.experiment.zoo_models == "cnn":
-            test_indices = list(range(860,880))  # limit to 10 models for faster testing
+        if cfg.test.reconstruction_error:
+            print("\nTesting reconstruction error on classification task...")
+            test_indices = list(range(860,880))
             sane_model.projection_head.head[0] = torch.nn.Linear(6144, 30, bias=False)  # adjust projection head for CNNs weights size
 
-        # classification task preparation
-        model_name = cfg.model.name
-        dataset_name = cfg.dataset.name
-        n_classes = cfg[dataset_name].num_classes
-        if (model_name == "vit" and dataset_name == "cifar10"):
-            img_size = 224
-        else:
-            img_size = cfg[dataset_name].img_size
-        batch_size = 32 if model_name == "vit" else cfg.training.batch_size
-        device = cfg.training.device
-        data_dir = cfg.data_dir
+            # classification task preparation
+            model_name = cfg.model.name
+            dataset_name = cfg.dataset.name
+            n_classes = cfg[dataset_name].num_classes
+            if (model_name == "vit" and dataset_name == "cifar10"):
+                img_size = 224
+            else:
+                img_size = cfg[dataset_name].img_size
+            batch_size = 32 if model_name == "vit" else cfg.training.batch_size
+            device = cfg.training.device
+            data_dir = cfg.data_dir
 
-        train, val, test, remapping = load_dataset(dataset_name, data_dir, model_name, img_size)
+            train, val, test, remapping = load_dataset(dataset_name, data_dir, model_name, img_size)
 
-        print(f"\nModel: {model_name} \nDataset: {dataset_name}")
-        classifier_network = load_model(model_name, dataset_name).to(device)
+            print(f"\nModel: {model_name} \nDataset: {dataset_name}")
+            classifier_network = load_model(model_name, dataset_name).to(device)
 
-        print("\nTesting reconstruction and predictions")
-
-        if cfg.experiment.zoo:
+            print("\nTesting reconstruction and predictions")
             # Iterate on selected split indices
             counter = 0
             relative_errors = []
@@ -152,7 +144,7 @@ def main(cfg):
                 current_relative_error = ClassificationMetrics.relative_error(original_acc, injected_acc)
                 relative_errors.append(current_relative_error)
             
-            print(f"\nAverage relative error: {sum(relative_errors) / len(relative_errors)}")
+            print(f"\nAverage relative error: {(sum(relative_errors) / len(relative_errors))*100:.2f}%")
 
         else:
             original_checkpoint = torch.load(Path(f"checkpoints/{cfg.checkpoint}.pt"), weights_only=False)
