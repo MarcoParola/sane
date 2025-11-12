@@ -68,3 +68,42 @@ class ClassificationMetrics():
     @staticmethod
     def relative_error(original_metric: float, recon_metric: float) -> float:
         return abs(original_metric - recon_metric) / original_metric
+    
+
+class SparsificationMetrics():
+    
+    def __init__(self, original_checkpoint, sparsified_checkpoint, original_accuracy: float, sparsified_accuracy: float, device: str):
+        self.device = device
+
+        
+        self.original_size = self._state_dict_size(original_checkpoint)
+        self.compressed_size = self._state_dict_size(sparsified_checkpoint)
+
+        self.original_accuracy = original_accuracy
+        self.sparsified_accuracy = sparsified_accuracy
+
+    @staticmethod
+    def _state_dict_size(state_dict: dict) -> float:
+        total_bytes = 0
+        for param_tensor in state_dict.values():
+            non_zero_elements = torch.count_nonzero(param_tensor).item()
+            total_bytes += non_zero_elements * param_tensor.element_size()
+        return total_bytes
+
+    def compression_ratio(self) -> float:
+        return self.original_size / self.compressed_size
+    
+    def accuracy_retention(self) -> float:
+        return self.sparsified_accuracy / self.original_accuracy
+    
+    def todict(self) -> dict[str, tuple[float, bool]]:
+        return {
+            'compression_ratio': (self.compression_ratio(), False),
+            'accuracy_retention': (self.accuracy_retention(), True)
+        }
+    
+    def __str__(self):
+        return repr({
+            k: f"{f'{v[0]*100:.2f}%' if v[1] else f'{v[0]:.2f}x'}"
+            for k, v in self.todict().items()
+        })
