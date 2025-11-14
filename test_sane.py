@@ -15,7 +15,7 @@ from src.utils.log import get_loggers
 import wandb
 from lightning.pytorch.loggers import WandbLogger
 from src.utils.weight_matching import permute_model_zoo
-from src.utils.metrics import ClassificationMetrics
+from src.utils.metrics import ClassificationMetrics, SparsificationMetrics
 
 
 def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics):
@@ -24,7 +24,7 @@ def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, san
     trainer.test(sane_model, dataloaders=testloader)
     recontokens, positions, embeddings = sane_model.get_test_outputs()
     injected_checkpoint = tokenizer.detokenize(recontokens, positions, original_checkpoint, ignore_pos=True)
-    injected_checkpoint_location = Path(cfg.test.injection_path)
+    injected_checkpoint_location = Path("checkpoints/injections/sparsified")
     injected_checkpoint_location.mkdir(777, parents=True, exist_ok=True)
     injected_checkpoint_location = injected_checkpoint_location.joinpath(f"injected_{i}.pt")
     injected_checkpoint_location.unlink(missing_ok=True); torch.save(injected_checkpoint, injected_checkpoint_location)
@@ -36,6 +36,9 @@ def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, san
     classifier_network.eval()
     injected_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
 
+    if cfg.experiment.sparsification:
+        sparsification_metrics = SparsificationMetrics(original_checkpoint, injected_checkpoint, original_metrics.accuracy(), injected_metrics.accuracy(), device)
+
     # layer by layer histogram plotting
     if trainer.logger:
         print("\nLogging...")
@@ -44,12 +47,20 @@ def reconstruct_and_test_model(cfg, original_checkpoint, tokenizer, trainer, san
         #    if idx != -1: 
         #        wandb_run.log({f"{idx}.{layer}/plot": WBImage(figure), f"MSEs/{idx}.{layer}": mse})
         #    else: wandb_run.log({f"Test/{layer}": WBImage(figure)}) # layer becomes the plot's title
-        
-        wandb_run.log({f"Test/Original_{k}": v[0] for k,v in original_metrics.todict().items()})
-        wandb_run.log({f"Test/Injected_{k}": v[0] for k,v in injected_metrics.todict().items()})
-        wandb_run.finish()
+        if cfg.experiment.sparsification:
+            wandb_run.log({"Original_Acc": original_metrics.accuracy()})
+            wandb_run.log({"Injected_Acc": injected_metrics.accuracy()})
+            wandb_run.log({"Acc_Retention": sparsification_metrics.accuracy_retention()})
+            wandb_run.log({"Compression_Rate": sparsification_metrics.compression_ratio()})
+        else:
+            wandb_run.log({f"Test/Original_{k}": v[0] for k,v in original_metrics.todict().items()})
+            wandb_run.log({f"Test/Injected_{k}": v[0] for k,v in injected_metrics.todict().items()})
+            wandb_run.finish()
 
-    return original_metrics.accuracy(), injected_metrics.accuracy()
+    if cfg.experiment.sparsification:
+        return sparsification_metrics.accuracy_retention(), sparsification_metrics.compression_ratio(), original_metrics.accuracy(), injected_metrics.accuracy()
+    else:
+        return original_metrics.accuracy(), injected_metrics.accuracy()
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -85,6 +96,8 @@ def main(cfg):
     if cfg.experiment.zoo:
         zoo_name = cfg.model.name + "_" + cfg.dataset.name
         zoo_path = cfg[zoo_name].zoo_path
+
+        print(f"Loading {zoo_name} zoo models ...")
     
         print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
         aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
@@ -121,15 +134,28 @@ def main(cfg):
             print("\nTesting reconstruction and predictions")
             # Iterate on selected split indices
             counter = 0
-            relative_errors = []
+            if cfg.experiment.sparsification:
+                compression_rates = []
+                accuracy_retentions = []
+                original_accuracies = []
+                injected_accuracies = []
+            else:
+                relative_errors = []
             for i in test_indices:
                 counter += 1
                 checkpoint = aligned_models[i]
                 wandb.finish()  # ensure previous run is closed
                 if cfg.experiment.mode == "augmented":
-                    wandb_logger = WandbLogger(project="test_sane", name=f"augmentation_{cfg.experiment.noise_percentage*100}%_model_{i}")
+                    if cfg.experiment.sparsification:
+                        wandb_logger = WandbLogger(project="test_sane_sparsified", name=f"augmentation_{cfg.experiment.noise_percentage*100}%_model_{i}")
+                    else:
+                        wandb_logger = WandbLogger(project="test_sane", name=f"augmentation_{cfg.experiment.noise_percentage*100}%_model_{i}")
                 else:
-                    wandb_logger = WandbLogger(project="test_sane", name=f"model_{i}")
+                    if cfg.experiment.sparsification:
+                        wandb_logger = WandbLogger(project="test_sane_sparsified", name=f"model_{i}")
+                    else:
+                        wandb_logger = WandbLogger(project="test_sane", name=f"model_{i}")
+
                 trainer = Trainer(logger=wandb_logger)
                 
                 # test original model only once
@@ -140,11 +166,24 @@ def main(cfg):
                 original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
 
                 print(f"\nReconstructing model {i}")
-                original_acc, injected_acc = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
-                current_relative_error = ClassificationMetrics.relative_error(original_acc, injected_acc)
-                relative_errors.append(current_relative_error)
+                if cfg.experiment.sparsification:
+                    current_acc_ret, current_compression_ratio, current_orig_acc, current_inj_acc = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+                    accuracy_retentions.append(current_acc_ret)
+                    compression_rates.append(current_compression_ratio)
+                    original_accuracies.append(current_orig_acc)
+                    injected_accuracies.append(current_inj_acc)
+                else:
+                    original_acc, injected_acc = reconstruct_and_test_model(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+                    current_relative_error = ClassificationMetrics.relative_error(original_acc, injected_acc)
+                    relative_errors.append(current_relative_error)
             
-            print(f"\nAverage relative error: {(sum(relative_errors) / len(relative_errors))*100:.2f}%")
+            if cfg.experiment.sparsification:
+                print(f"\nAverage original accuracy: {(sum(original_accuracies) / len(original_accuracies))*100:.2f}%")
+                print(f"\nAverage injected accuracy: {(sum(injected_accuracies) / len(injected_accuracies))*100:.2f}%")
+                print(f"\nAverage accuracy retention: {(sum(accuracy_retentions) / len(accuracy_retentions))*100:.2f}%")
+                print(f"\nAverage compression rate: {(sum(compression_rates) / len(compression_rates)):.2f}x")
+            else:
+                print(f"\nAverage relative error: {(sum(relative_errors) / len(relative_errors))*100:.2f}%")
 
         else:
             original_checkpoint = torch.load(Path(f"checkpoints/{cfg.checkpoint}.pt"), weights_only=False)

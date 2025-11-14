@@ -36,8 +36,7 @@ training:
 test:
   test_error: False
   reconstruction_error: True
-  sane_checkpoint_path: "out/zoo_trained_cnn_base/sane_model/sane_base/zoo_trained_cnn_base_sws4_b2_e256_h2/best/no_emb-sane-epoch=381-val_loss=0.0000.ckpt"
-  injection_path: "checkpoints/injections/zoo_trained_cnn"
+  sane_checkpoint_path: "out/zoo_magnitude_50%_small_cnn_cifar10_base/sane_base/zoo_magnitude_50%_small_cnn_cifar10_base_sws4_b2_e256_h2/best/sane-epoch=468-val_loss=0.0193.ckpt"
 
 augmentation:
   noise_std: 0.01
@@ -57,6 +56,7 @@ experiment:
   mode: "base" # "base" or "augmented"
   zoo: True
   noise_percentage: 0.02
+  sparsification: True
 
 log:
   dir: "./logs"

@@ -26,12 +26,18 @@ def main(cfg):
     tokenizer = Tokenizer(cfg.transformer.blocksize)
     # if zoo mode is selected, load zoo weights
     if cfg.experiment.zoo:
-        mode = "zoo"
+        mode = "zoo"            
         loss_to_monitor = "val_loss"
         best_filename = "sane-{epoch:02d}-{val_loss:.4f}"
-        print(f"Loading {cfg.model.name}_{cfg.dataset.name} zoo models ...")
         zoo_name = cfg.model.name + "_" + cfg.dataset.name
-        zoo_path = cfg[zoo_name].zoo_path
+        
+        if cfg.experiment.sparsification:
+            print(f"Loading {cfg.model.name}_{cfg.dataset.name} sparsified zoo models ...")
+            mode = mode + "_" + cfg.sparsification.pruner + "_" + str(int(cfg.sparsification.sparsity_level*100))+"%"
+            zoo_path = Path("checkpoints/sparsified_zoos/" + zoo_name + f"_{cfg.sparsification.pruner}_sparsity_{cfg.sparsification.sparsity_level}")
+        else:
+            print(f"Loading {cfg.model.name}_{cfg.dataset.name} zoo models ...")
+            zoo_path = cfg[zoo_name].zoo_path
 
         print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
         aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
@@ -94,7 +100,7 @@ def main(cfg):
 
     # Checkpoint callback to save the best model
     checkpoint_callback = ModelCheckpoint(
-        dirpath=Path(f"out/{mode}", "sane_model", *log_run.split("."), "best"),
+        dirpath=Path(f"out/{mode}", *log_run.split("."), "best"),
         filename=best_filename,
         monitor=loss_to_monitor,
         mode="min",
