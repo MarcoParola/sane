@@ -27,7 +27,9 @@ def main(cfg):
 
     compression_rates = []
     accuracy_retentions = []
-    start_index = 140
+    original_accuracies = []
+    sparsified_accuracies = []
+    start_index = 860
     end_index = start_index + 20
     original_zoo_dirs = sorted(p for p in original_zoo_path.iterdir() if p.is_dir())
 
@@ -35,39 +37,39 @@ def main(cfg):
 
     for idx, model_dir in enumerate(original_zoo_dirs[start_index:end_index], start=start_index):
 
-        print(f"Evaluating checkpoint {idx}...")
+        print(f"\rEvaluating checkpoint {idx}...", end="", flush=True)
 
         original_checkpoint_path = model_dir / "checkpoint_000050" / "checkpoints"
-        sparsified_checkpoint_path = sparsified_zoo_path /  f"checkpoint_{idx}.pt"
-
+        sparsified_checkpoint_path = sparsified_zoo_path / model_dir.name / "checkpoint_000050" / "checkpoints"
         original_checkpoint = torch.load(original_checkpoint_path, weights_only=False)
         sparsified_checkpoints = torch.load(sparsified_checkpoint_path, weights_only=False)
 
-
-        print("Classification Metrics:")
-        print("\tOriginal Model:")
+        #print("Classification Metrics:")
+        #print("\tOriginal Model:")
         model.load_state_dict(original_checkpoint)
         model.eval()
         original_metrics = test_classifier(model, test, num_classes, batch_size, device, remapping)
         original_accuracy = original_metrics.accuracy()
+        original_accuracies.append(original_accuracy)
 
-        print("\tSparsified Model:")
+        #print("\tSparsified Model:")
         model.load_state_dict(sparsified_checkpoints)
         model.eval()
         sparsified_metrics = test_classifier(model, test, num_classes, batch_size, device, remapping)
         sparsified_accuracy = sparsified_metrics.accuracy()
+        sparsified_accuracies.append(sparsified_accuracy)
 
-        print("Sparsification Metrics:")
+        #print("Sparsification Metrics:")
         metrics = SparsificationMetrics(original_checkpoint, sparsified_checkpoints, original_accuracy, sparsified_accuracy, device)
-        print(metrics)
+        #print(metrics)
 
         compression_rates.append(metrics.compression_ratio())
         accuracy_retentions.append(metrics.accuracy_retention())
 
-    avg_compression = sum(compression_rates) / len(compression_rates)
-    avg_accuracy_retention = sum(accuracy_retentions) / len(accuracy_retentions)
-    print(f"Average Compression Rate: {avg_compression:.2f}x")
-    print(f"Average Accuracy Retention: {avg_accuracy_retention*100:.2f}%")
+    print(f"\nAverage original accuracy: {(sum(original_accuracies) / len(original_accuracies))*100:.2f}%")
+    print(f"\nAverage injected accuracy: {(sum(sparsified_accuracies) / len(sparsified_accuracies))*100:.2f}%")
+    print(f"\nAverage accuracy retention: {(sum(accuracy_retentions) / len(accuracy_retentions))*100:.2f}%")
+    print(f"\nAverage compression rate: {(sum(compression_rates) / len(compression_rates)):.2f}x")
 
 
 if __name__ == "__main__":
