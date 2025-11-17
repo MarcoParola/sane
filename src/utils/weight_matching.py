@@ -133,6 +133,78 @@ def permute_model_zoo(zoo_path: str, model_name: str, dataset_name: str, device=
     return aligned_state_dicts
 
 
+def permute_original_and_sparsified_zoo(original_zoo_path: str, sparsified_zoo_path: str, model_name: str, dataset_name: str, device='cpu'):
+    # Load model zoo checkpoints
+    original_zoo_path = Path(original_zoo_path)
+    original_model_zoo = []
+    counter = 0
+    for folder in sorted(original_zoo_path.iterdir()):
+        if folder.is_dir():
+            current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
+            if current_checkpoint_path.exists():
+                model = load_model(model_name, dataset_name)
+                checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                model.load_state_dict(checkpoint)
+                counter = counter+1
+                print(f"\rLoaded {counter} model(s)", end='', flush=True)
+                original_model_zoo.append(model)
+    print()
+
+    sparsified_zoo_path = Path(sparsified_zoo_path)
+    sparsified_model_zoo = []
+    counter = 0
+    for folder in sorted(sparsified_zoo_path.iterdir()):
+        if folder.is_dir():
+            current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
+            if current_checkpoint_path.exists():
+                model = load_model(model_name, dataset_name)
+                checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                model.load_state_dict(checkpoint)
+                counter = counter+1
+                print(f"\rLoaded {counter} model(s)", end='', flush=True)
+                sparsified_model_zoo.append(model)
+    print()
+
+
+    ps = cnn_permutation_spec()
+    params_a = {k: v.detach().clone().to(device)
+                for k, v in original_model_zoo[0].state_dict().items()}
+
+    print("Aligning original model zoo...")
+    aligned_params_list = [params_a]
+    per_model_permutations = []
+    first_perm = first_perm = {p: torch.arange(params_a[axes[0][0]].shape[axes[0][1]], device=device) for p, axes in ps.perm_to_axes.items()}
+    per_model_permutations.append(first_perm)
+    
+    for model in original_model_zoo[1:]:
+        params_b = {k: v.detach().clone().to(device) for k, v in model.state_dict().items()}
+        perm = weight_matching(ps, params_a, params_b, device=device)
+        per_model_permutations.append(perm)
+        aligned = apply_permutation(ps, perm, params_b)
+        aligned_params_list.append(aligned)
+    print(f"\nAligned {len(aligned_params_list)} model(s)\n", end='', flush=True)
+    
+    print("Aligning sparsified model zoo...")
+    sparse_aligned_params_list = []
+    for i, model in enumerate(sparsified_model_zoo):
+        params_b = {k: v.detach().clone().to(device) for k, v in model.state_dict().items()}
+        perm = per_model_permutations[i]
+        aligned = apply_permutation(ps, perm, params_b)
+        sparse_aligned_params_list.append(aligned)
+    print(f"\nAligned {len(sparse_aligned_params_list)} sparsified model(s)\n", end='', flush=True)
+
+    aligned_state_dicts = [
+        {k: v.cpu() for k, v in params.items()}
+        for params in aligned_params_list
+    ]
+
+    sparse_aligned_state_dicts = [
+        {k: v.cpu() for k, v in params.items()}
+        for params in sparse_aligned_params_list
+    ]
+
+    return aligned_state_dicts, sparse_aligned_state_dicts
+
 
 if __name__ == "__main__":
 
