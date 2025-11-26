@@ -22,7 +22,7 @@ def prune_weights(store_location, checkpoint, dataset_name, data_dir, model_name
     ]
     
     train, *_ = load_dataset(dataset_name, data_dir, model_name, img_size)
-    hessian_loader = torch.utils.data.DataLoader(train, batch_size = 2, shuffle=True)
+    hessian_loader = torch.utils.data.DataLoader(train, batch_size = 128, shuffle=True, num_workers=4)
 
     for layer_name in layer_name_list:
         # skip the hessian computation if already saved
@@ -101,7 +101,6 @@ def prune_weights(store_location, checkpoint, dataset_name, data_dir, model_name
                 wb[:, prune_col_idx] += delta_W
                 mask[prune_row_idx, prune_col_idx] = 0
 
-            # save pruned weights into state_dict
             wb_masked = np.multiply(wb, mask)
 
             if layer_type == 'F':

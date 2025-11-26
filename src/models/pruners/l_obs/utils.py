@@ -62,7 +62,7 @@ def generate_hessian(model: nn.Module,
                      layer_type: str,
                      n_batch_used: int = 50000,
                      device: str = 'cuda',
-                     stride_factor: int = 1,
+                     stride_factor: int = 3,
                      low_memory: bool = False) -> torch.Tensor:
     model.eval()
     capture = {}
@@ -153,7 +153,7 @@ def generate_hessian_inv_woodbury(model: nn.Module,
                                   layer_type: str,
                                   n_batch_used: int = 50000,
                                   device: str = 'cuda',
-                                  stride_factor: int = 1,          # safer default
+                                  stride_factor: int = 3,          # safer default
                                   init_diag: float = 1e6) -> torch.Tensor:
     model.eval()
     capture = {}

@@ -29,7 +29,7 @@ def main(cfg):
     accuracy_retentions = []
     original_accuracies = []
     sparsified_accuracies = []
-    start_index = 860
+    start_index = 0
     end_index = start_index + 20
     original_zoo_dirs = sorted(p for p in original_zoo_path.iterdir() if p.is_dir())
 

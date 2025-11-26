@@ -21,7 +21,7 @@ def main(cfg):
     model_name = cfg.model.name
     dataset_name = cfg.dataset.name
     device = cfg.training.device
-    data_dir = cfg.data.dir
+    data_dir = cfg.data_dir
     img_size = cfg[dataset_name].img_size
 
     zoo_name = cfg.model.name + "_" + cfg.dataset.name
@@ -39,12 +39,12 @@ def main(cfg):
         print(f"Sparsifying {zoo_name} models with {pruner} pruner at sparsity level {cfg.sparsification.sparsity_level}")
     elif pruner == "l_obs":
         print(f"Sparsifying {zoo_name} models with {pruner} pruner at sparsity levels 0.3, 0.5 and 0.8 ")
+        
     counter = 0
     for folder in zoo_path.iterdir():
         if folder.is_dir():
             current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
             if current_checkpoint_path.exists():
-                model = load_model(cfg.model.name, cfg.dataset.name)
                 checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                 model.load_state_dict(checkpoint)
                 store_location = Path(sparsified_zoo_path / folder.name / "checkpoint_000050")
