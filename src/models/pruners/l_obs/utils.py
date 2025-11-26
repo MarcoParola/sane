@@ -17,13 +17,15 @@ def compute_fc_hessian(activations: torch.Tensor) -> torch.Tensor:
 def compute_conv_hessian(activations: torch.Tensor,
                          kernel_size: int,
                          stride: int,
+                         padding: int,
                          add_bias: bool = True,
-                         stride_factor: int = 1) -> torch.Tensor:
-    B, C, H, W = activations.shape
-    k = kernel_size
-    s = stride * stride_factor
+                         low_memory: bool = False) -> torch.Tensor:
+    B, C, Ht, Wt = activations.shape
+    k = int(kernel_size)
+    s = int(stride)
+    p = int(padding)
 
-    unfold = nn.Unfold(kernel_size=k, stride=s, padding=(k // 2))
+    unfold = nn.Unfold(kernel_size=k, stride=s, padding=p)
     patches = unfold(activations)
     patches = patches.permute(0, 2, 1).contiguous()
     BL, D = patches.shape[0] * patches.shape[1], patches.shape[2]
@@ -60,26 +62,17 @@ def generate_hessian(model: nn.Module,
                      layer_type: str,
                      n_batch_used: int = 50000,
                      device: str = 'cuda',
-                     stride_factor: int = 3) -> torch.Tensor:
-    """
-    Generate empirical Hessian (averaged over n_batch_used batches) for the specified layer.
-    model: PyTorch model (eval mode recommended)
-    trainloader: DataLoader yielding (inputs, targets)
-    module_name: name of the module to capture (string used in named_modules)
-    layer_type: 'F' for FC, 'C' for conv, 'R' for conv-without-bias/res
-    n_batch_used: number of batches to use
-    device: 'cuda' or 'cpu'
-    stride_factor: factor to multiply convolution stride (to reduce patch count)
-    Returns: Hessian tensor on device
-    """
+                     stride_factor: int = 1,
+                     low_memory: bool = False) -> torch.Tensor:
     model.eval()
     capture = {}
     module = None
     for name, m in model.named_modules():
         if name == module_name or name.endswith(module_name):
             module = m
+            break
     if module is None:
-            raise ValueError(f"Module {module_name} not found in model.named_modules()")
+        raise ValueError(f"Module {module_name} not found in model.named_modules()")
 
     handle = register_forward_hook_capture(module, capture, module_name)
 
@@ -87,22 +80,36 @@ def generate_hessian(model: nn.Module,
     used = 0
     dev = torch.device(device if torch.cuda.is_available() and device == 'cuda' else 'cpu')
     model.to(dev)
+
+    # get kernel / stride / padding from module
     kernel_size = getattr(module, 'kernel_size', None)
-    stride = getattr(module, 'stride', 1)
     if isinstance(kernel_size, tuple):
-        k = kernel_size[0]
+        k = int(kernel_size[0])
     elif isinstance(kernel_size, int):
-        k = kernel_size
+        k = int(kernel_size)
     else:
         k = None
+
+    module_stride = getattr(module, 'stride', 1)
+    stride_val = int(module_stride[0] if isinstance(module_stride, tuple) else module_stride)
+
+    module_padding = getattr(module, 'padding', None)
+    if isinstance(module_padding, tuple):
+        padding_val = int(module_padding[0])
+    elif isinstance(module_padding, int):
+        padding_val = int(module_padding)
+    else:
+        padding_val = 0
 
     for batch_idx, (inputs, _) in enumerate(trainloader):
         if batch_idx >= n_batch_used:
             break
         inputs = inputs.to(dev)
-        _ = model(inputs)
+        with torch.no_grad():
+            _ = model(inputs)
 
         if module_name not in capture:
+            handle.remove()
             raise RuntimeError("Forward hook did not capture layer input. Ensure module_name is correct.")
         layer_input = capture[module_name].to(dev)
 
@@ -112,14 +119,19 @@ def generate_hessian(model: nn.Module,
             if k is None:
                 w = getattr(module, 'weight', None)
                 if (w is not None) and (w.dim() >= 3):
-                    k = w.shape[2]
-                    stride = module.stride[0] if isinstance(module.stride, tuple) else module.stride
+                    k = int(w.shape[2])
                 else:
+                    handle.remove()
                     raise ValueError("Could not infer kernel size for conv layer; specify module with .kernel_size")
-            add_bias = (layer_type == 'C')
-            H_batch = compute_conv_hessian(layer_input, kernel_size=k, stride=stride,
-                                           add_bias=add_bias, stride_factor=stride_factor)
+            eff_stride = stride_val * int(stride_factor)
+            H_batch = compute_conv_hessian(layer_input,
+                                           kernel_size=k,
+                                           stride=eff_stride,
+                                           padding=padding_val,
+                                           add_bias=True,
+                                           low_memory=low_memory)
         else:
+            handle.remove()
             raise ValueError("layer_type must be 'F' or 'C'")
 
         if hessian_accum is None:
@@ -141,16 +153,8 @@ def generate_hessian_inv_woodbury(model: nn.Module,
                                   layer_type: str,
                                   n_batch_used: int = 50000,
                                   device: str = 'cuda',
-                                  stride_factor: int = 3,
+                                  stride_factor: int = 1,          # safer default
                                   init_diag: float = 1e6) -> torch.Tensor:
-    """
-    Compute inverse Hessian via iterative Woodbury (Sherman-Morrison) updates.
-    Mirrors original TF logic: initial hessian_inverse = init_diag * I, then for each sample (or patch)
-    do rank-1 update:
-        h_inv <- h_inv - (h_inv * w^T * w * h_inv) / (dataset_size + w * h_inv * w^T)
-    Returns: hessian_inverse tensor (d, d) on device.
-    layer_type: 'F' -> FC (append bias), 'C' -> conv (append bias), 'R' -> res (no bias)
-    """
     model.eval()
     capture = {}
     module = _get_module_by_name(model, module_name)
@@ -166,17 +170,29 @@ def generate_hessian_inv_woodbury(model: nn.Module,
 
     kernel_size = getattr(module, 'kernel_size', None)
     if isinstance(kernel_size, tuple):
-        k = kernel_size[0]
+        k = int(kernel_size[0])
     elif isinstance(kernel_size, int):
-        k = kernel_size
+        k = int(kernel_size)
     else:
         k = None
+
+    module_stride = getattr(module, 'stride', 1)
+    stride_val = int(module_stride[0] if isinstance(module_stride, tuple) else module_stride)
+
+    module_padding = getattr(module, 'padding', None)
+    if isinstance(module_padding, tuple):
+        padding_val = int(module_padding[0])
+    elif isinstance(module_padding, int):
+        padding_val = int(module_padding)
+    else:
+        padding_val = 0
 
     for batch_idx, (inputs, _) in enumerate(trainloader):
         if batch_idx >= n_batch_used:
             break
         inputs = inputs.to(dev)
-        _ = model(inputs)
+        with torch.no_grad():
+            _ = model(inputs)
         layer_input = capture[module_name].to(dev)
 
         if layer_type == 'F':
@@ -198,11 +214,13 @@ def generate_hessian_inv_woodbury(model: nn.Module,
             if k is None:
                 w = getattr(module, 'weight', None)
                 if (w is not None) and (w.dim() >= 3):
-                    k = w.shape[2]
+                    k = int(w.shape[2])
                 else:
+                    handle.remove()
                     raise ValueError("Could not infer kernel size for conv layer; specify module with .kernel_size")
             add_bias = (layer_type == 'C')
-            unfold = nn.Unfold(kernel_size=k, stride=module.stride[0] * stride_factor, padding=(k // 2))
+            eff_stride = stride_val * int(stride_factor)
+            unfold = nn.Unfold(kernel_size=k, stride=eff_stride, padding=padding_val)
             patches = unfold(layer_input)
             patches = patches.permute(0, 2, 1).contiguous()
             B, L, D = patches.shape
@@ -224,6 +242,7 @@ def generate_hessian_inv_woodbury(model: nn.Module,
                     numerator = torch.ger(h_inv_v, h_inv_v)
                     hessian_inv = hessian_inv - numerator / denom
         else:
+            handle.remove()
             raise ValueError("layer_type must be 'F' or 'C'")
 
         used_batches += 1
