@@ -19,7 +19,7 @@ def permutation_spec_from_axes_to_perm(axes_to_perm: dict) -> PermutationSpec:
     return PermutationSpec(perm_to_axes=dict(perm_to_axes), axes_to_perm=axes_to_perm)
 
 
-def cnn_permutation_spec():
+def small_cnn_permutation_spec():
     conv = lambda name, p_in, p_out: {f"{name}.weight": (p_out, p_in, None, None), f"{name}.bias": (p_out,)}
     dense = lambda name, p_in, p_out: {f"{name}.weight": (p_out, p_in), f"{name}.bias": (p_out,)}
 
@@ -29,6 +29,19 @@ def cnn_permutation_spec():
         **conv("module_list.6", "P1", None),
         **dense("module_list.9", None, "P3"),
         **dense("module_list.11", "P3", None),
+    })
+
+
+def large_cnn_permutation_spec():
+    conv = lambda name, p_in, p_out: {f"{name}.weight": (p_out, p_in, None, None), f"{name}.bias": (p_out,)}
+    dense = lambda name, p_in, p_out: {f"{name}.weight": (p_out, p_in), f"{name}.bias": (p_out,)}
+
+    return permutation_spec_from_axes_to_perm({
+        **conv("module_list.0", None, "P0"),
+        **conv("module_list.4", "P0", "P1"),
+        **conv("module_list.8", "P1", None),
+        **dense("module_list.13", None, "P3"),
+        **dense("module_list.16", "P3", None),
     })
 
 
@@ -116,7 +129,10 @@ def permute_model_zoo(zoo_path: str, model_name: str, dataset_name: str, device=
     params_a = params_list[0]
     aligned_params_list = [params_a]
 
-    ps = cnn_permutation_spec()
+    if model_name == "small_cnn":
+        ps = small_cnn_permutation_spec()
+    elif model_name == "large_cnn":
+        ps = large_cnn_permutation_spec
 
     for params_b in params_list[1:]:
         perm = weight_matching(ps, params_a, params_b, device=device)
@@ -166,7 +182,11 @@ def permute_original_and_sparsified_zoo(original_zoo_path: str, sparsified_zoo_p
     print()
 
 
-    ps = cnn_permutation_spec()
+    if model_name == "small_cnn":
+        ps = small_cnn_permutation_spec()
+    elif model_name == "large_cnn":
+        ps = large_cnn_permutation_spec
+
     params_a = {k: v.detach().clone().to(device)
                 for k, v in original_model_zoo[0].state_dict().items()}
 
