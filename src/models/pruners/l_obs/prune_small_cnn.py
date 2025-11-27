@@ -5,7 +5,7 @@ import numpy as np
 from numpy.linalg import inv, pinv
 from pathlib import Path
 
-def prune_weights(store_location, checkpoint, dataset_name, data_dir, model_name, img_size):
+def prune_small_cnn(store_location, checkpoint, dataset_name, data_dir, model_name, img_size):
     current_zoo_model_path = Path(*store_location.parts[3:])
     current_path = f"{model_name}_{dataset_name}" / current_zoo_model_path
 

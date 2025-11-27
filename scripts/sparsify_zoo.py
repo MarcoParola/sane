@@ -3,7 +3,8 @@ from pathlib import Path
 import hydra
 from src.models.utils import load_model
 import os
-from src.models.pruners.l_obs.l_obs import prune_weights
+from src.models.pruners.l_obs.prune_small_cnn import prune_small_cnn
+from src.models.pruners.l_obs.prune_large_cnn import prune_large_cnn
 
 def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name, data_dir, model_name, img_size):
     if pruner_type == "magnitude":
@@ -14,7 +15,10 @@ def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name
                 prune.remove(module, 'weight')
         torch.save(model.state_dict(), store_location / "checkpoints")
     elif pruner_type == "l_obs":
-        prune_weights(store_location, model, dataset_name, data_dir, model_name, img_size)
+        if model_name == "small_cnn":
+            prune_small_cnn(store_location, model, dataset_name, data_dir, model_name, img_size)
+        elif model_name == "large_cnn":
+            prune_large_cnn(store_location, model, dataset_name, data_dir, model_name, img_size)
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(cfg):
