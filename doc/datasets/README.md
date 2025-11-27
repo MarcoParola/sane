@@ -2,15 +2,22 @@
 
 ## Supported datasets:
 - **Cifar10**
-- **Cifar100**
-- **Tiny-ImageNet**
+- **MNIST**
+- **SVHN**
 
-Cifar10 and Cifar100 are automatically downloaded and saved in `./data` 
-through the Pytorch library `torchvision.datasets`, while Tiny-Imagenet needs to be manually downloaded from [Kaggle](https://www.kaggle.com/datasets/akash2sharma/tiny-imagenet) and decompressed in `./data`.
+All datasets are automatically downloaded and saved in `./data` through the Pytorch library `torchvision.datasets`.
 
 ## Supported model zoos (and dataset weights):
-- **Tiny-Imagenet Resnet18**
+- **Cifar10 CNN-l**
+    Download link: https://zenodo.org/records/6620869/files/cifar_large_seed.zip?download=1
 
-    Download link: https://zenodo.org/records/7023278/files/tiny-imagenet_resnet18_subset.zip?download=1
+- **Cifar10 CNN-s**
+    Download link: https://zenodo.org/records/6620869/files/cifar_small_seed.zip?download=1
 
-    The archive needs to be downloaded from the link above and decompressed in `./checkpoints`.
+- **MNIST CNN-s**
+    Download link: https://zenodo.org/records/6632087/files/mnist_seed.zip?download=1
+
+- **SVHN CNN-s**
+    Download link: https://zenodo.org/records/6632121/files/svhn_seed.zip?download=1
+
+All the archives need to be downloaded from the link above and decompressed in `./checkpoints`.
