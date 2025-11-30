@@ -79,8 +79,9 @@ In the `./scripts/` folder there are all independent files not involved in the m
     checkpoints/sparsified_zoo/{model_name}_{dataset_name}_{pruning_method}_sparsity_{sparsity_level}/...
     ```
     Currently, the supported purning method are:
-    - **Global Magnitude** (sparsification.method="magnitude")
-    - **Layer-wise Optimal Brain Surgeon** (sparsification.method="l_obs")
+    - **Global Magnitude** (sparsification.pruner="magnitude")
+    - **Layer-wise Optimal Brain Surgeon** (sparsification.pruner="l_obs")
+    - **WoodFisher** (sparsification.pruner="woodfisher")
     ```
     python -m scripts.sparsify_zoo
     ```

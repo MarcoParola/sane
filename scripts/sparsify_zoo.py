@@ -5,8 +5,9 @@ from src.models.utils import load_model
 import os
 from src.models.pruners.l_obs.prune_small_cnn import prune_small_cnn
 from src.models.pruners.l_obs.prune_large_cnn import prune_large_cnn
+from src.models.pruners.woodfisher.run import run_woodfisher
 
-def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name, data_dir, model_name, img_size):
+def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name, data_dir, model_name, img_size, device):
     if pruner_type == "magnitude":
         import torch.nn.utils.prune as prune
         for name, module in model.named_modules():
@@ -19,6 +20,9 @@ def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name
             prune_small_cnn(store_location, model, dataset_name, data_dir, model_name, img_size)
         elif model_name == "large_cnn":
             prune_large_cnn(store_location, model, dataset_name, data_dir, model_name, img_size)
+    elif pruner_type == "woodfisher":
+        run_woodfisher(model, dataset_name, data_dir, model_name, img_size, sparsity_level, device)
+        torch.save(model.state_dict(), store_location / "checkpoints")
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(cfg):
@@ -53,7 +57,7 @@ def main(cfg):
                 model.load_state_dict(checkpoint)
                 store_location = Path(sparsified_zoo_path / folder.name / "checkpoint_000050")
                 os.makedirs(store_location, exist_ok=True)
-                prune_model(model, pruner, cfg.sparsification.sparsity_level, store_location, dataset_name, data_dir, model_name, img_size)
+                prune_model(model, pruner, cfg.sparsification.sparsity_level, store_location, dataset_name, data_dir, model_name, img_size, device)
                 counter = counter+1
                 print(f"\rSparsified {counter} model(s)", end='', flush=True)
     print()    
