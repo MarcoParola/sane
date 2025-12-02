@@ -6,6 +6,7 @@ import os
 from src.models.pruners.l_obs.prune_small_cnn import prune_small_cnn
 from src.models.pruners.l_obs.prune_large_cnn import prune_large_cnn
 from src.models.pruners.woodfisher.run import run_woodfisher
+from src.models.pruners.chita.run import run_chita
 
 def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name, data_dir, model_name, img_size, device):
     if pruner_type == "magnitude":
@@ -23,6 +24,10 @@ def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name
     elif pruner_type == "woodfisher":
         run_woodfisher(model, dataset_name, data_dir, model_name, img_size, sparsity_level, device)
         torch.save(model.state_dict(), store_location / "checkpoints")
+    elif pruner_type == "chita":
+        pruned_model = run_chita(model, sparsity_level, dataset_name, data_dir, model_name, img_size)
+        torch.save(pruned_model.state_dict(), store_location / "checkpoints")
+
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(cfg):
@@ -52,10 +57,14 @@ def main(cfg):
     for folder in zoo_path.iterdir():
         if folder.is_dir():
             current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
+            store_location = Path(sparsified_zoo_path / folder.name / "checkpoint_000050")
+            #if store_location.exists():
+            #    counter = counter+1
+            #    print(f"checkpoint {counter} already sparsified")
+            #    continue
             if current_checkpoint_path.exists():
                 checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                 model.load_state_dict(checkpoint)
-                store_location = Path(sparsified_zoo_path / folder.name / "checkpoint_000050")
                 os.makedirs(store_location, exist_ok=True)
                 prune_model(model, pruner, cfg.sparsification.sparsity_level, store_location, dataset_name, data_dir, model_name, img_size, device)
                 counter = counter+1

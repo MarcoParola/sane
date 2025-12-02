@@ -11,3 +11,4 @@ wandb
 lightning
 jax
 jaxlib
+numba
