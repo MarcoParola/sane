@@ -27,6 +27,14 @@ def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name
     elif pruner_type == "chita":
         pruned_model = run_chita(model, sparsity_level, dataset_name, data_dir, model_name, img_size)
         torch.save(pruned_model.state_dict(), store_location / "checkpoints")
+    elif pruner_type == "random":
+        import torch.nn.utils.prune as prune
+        model.eval()
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear) or isinstance(module, torch.nn.Conv2d):
+                prune.random_unstructured(module, name="weight", amount=sparsity_level)
+                prune.remove(module, "weight")
+        torch.save(model.state_dict(), store_location / "checkpoints")
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
