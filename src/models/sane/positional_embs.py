@@ -18,9 +18,9 @@ class PositionalEmbs(torch.nn.Module):
         assert positions.shape[2] == len(self.max_positions), f"Positions should have {len(self.max_positions)} dimensions, got: {positions.shape[2]}"
         assert positions.shape[0] == inputs.shape[0] and positions.shape[1] == inputs.shape[1], f"positions and inputs should have same shapes along dimensions 0 and 1"
 
-        pe1 = self.pe1(positions[:, :, 0])
-        pe2 = self.pe2(positions[:, :, 1])
+        pe1 = self.pe1(positions[:, :, 0].long())
+        pe2 = self.pe2(positions[:, :, 1].long())
         posemb = [pe1, pe2]
-        if self.pe3 is not None: pe3 = self.pe3(positions[:,:,2]); posemb = [pe1+pe2, pe3]
+        if self.pe3 is not None: pe3 = self.pe3(positions[:,:,2].long()); posemb = [pe1+pe2, pe3]
         posemb = torch.cat(posemb, dim=2)
         return inputs + posemb

@@ -1,8 +1,8 @@
 import hydra
 import torch
 import wandb
-from src.models.sane.sane import Sane
-from src.datasets.weights.tokenized_model_weights import TokenizedModelWeightDataset, TokenizedAlignedZooDataset
+from src.models.sane.sparsifisane import SparsifiSane
+from src.datasets.weights.tokenized_model_weights import TokenizedModelWeightDataset, TokenizedAlignedZooDataset, SparsifiedZooDataset
 from src.utils.tokenizer import Tokenizer
 from test_classifier import test_classifier 
 # from src.utils.plots import layers_histogram
@@ -14,7 +14,7 @@ from pathlib import Path
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks import EarlyStopping
-from src.utils.weight_matching import permute_model_zoo
+from src.utils.weight_matching import permute_model_zoo, permute_original_and_sparsified_zoo
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -28,19 +28,21 @@ def main(cfg):
     if cfg.experiment.zoo:
         mode = "zoo"            
         loss_to_monitor = "val_loss"
-        best_filename = "sane-{epoch:02d}-{val_loss:.4f}"
+        best_filename = "sparsifisane-{epoch:02d}-{val_loss:.4f}"
         zoo_name = cfg.model.name + "_" + cfg.dataset.name
+
+        print(f"Loading {cfg.model.name}_{cfg.dataset.name} zoo models ...")
+        zoo_path = cfg[zoo_name].zoo_path
         
         if cfg.experiment.sparsification:
             print(f"Loading {cfg.model.name}_{cfg.dataset.name} sparsified zoo models ...")
             mode = mode + "_" + cfg.sparsification.pruner + "_" + str(int(cfg.sparsification.sparsity_level*100))+"%"
-            zoo_path = Path("checkpoints/sparsified_zoos/" + zoo_name + f"_{cfg.sparsification.pruner}_sparsity_{cfg.sparsification.sparsity_level}")
+            sparsified_zoo_path = Path("checkpoints/sparsified_zoos/" + zoo_name + f"_{cfg.sparsification.pruner}_sparsity_{cfg.sparsification.sparsity_level}")
+            print("Aligning the both original and sparsified model zoo...")
+            aligned_models, aligned_sparsified_model = permute_original_and_sparsified_zoo(zoo_path, sparsified_zoo_path, cfg.model.name, cfg.dataset.name)
         else:
-            print(f"Loading {cfg.model.name}_{cfg.dataset.name} zoo models ...")
-            zoo_path = cfg[zoo_name].zoo_path
-
-        print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
-        aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
+            print("Aligning the zoo models to the the canoincal base to resolve asimmetries...")
+            aligned_models = permute_model_zoo(zoo_path, cfg.model.name, cfg.dataset.name)
 
         mode = mode + "_" + zoo_name
         train_indices = list(range(0,700))
@@ -58,13 +60,22 @@ def main(cfg):
         print("Loading training models...")
         if cfg.experiment.mode == "base":
             mode = mode + "_base"
-            train_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices)
+            if cfg.experiment.sparsification:
+                train_set = SparsifiedZooDataset(aligned_models, aligned_sparsified_model, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices)
+            else:
+                train_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices)
         elif cfg.experiment.mode == "augmented":
             print(f"Training on augmented zoo dataset with noise of {cfg.experiment.noise_percentage*100}%...")
             mode = mode + "_augmented_" + str(int(cfg.experiment.noise_percentage*100))
-            train_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices, noise_percentage=cfg.experiment.noise_percentage)
+            if cfg.experiment.sparsification:
+                train_set = SparsifiedZooDataset(aligned_models, aligned_sparsified_model, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices, noise_percentage=cfg.experiment.noise_percentage)
+            else:
+                train_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=train_indices, noise_percentage=cfg.experiment.noise_percentage)
         print("Loading validation models...")
-        val_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=val_indices)
+        if cfg.experiment.sparsification:
+            val_set = SparsifiedZooDataset(aligned_models, aligned_sparsified_model, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=val_indices)
+        else:
+            val_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=val_indices)
         print("Loading testing models...")
         test_set = TokenizedAlignedZooDataset(aligned_models, tokenizer, cfg.transformer.blocksize, stride=stride, split_indices=test_indices)
         trainloader = torch.utils.data.DataLoader(dataset=train_set, batch_size=cfg.training.batch_size, shuffle=True, num_workers=0, persistent_workers=False)
@@ -89,7 +100,7 @@ def main(cfg):
     loggers = get_loggers(cfg, run_group, run_name)
 
     print("Initializing SANE model ...")
-    sane_model = Sane(
+    sane_model = SparsifiSane(
         conf = cfg,
         idim = cfg.transformer.blocksize,
         edim = cfg.transformer.edim,

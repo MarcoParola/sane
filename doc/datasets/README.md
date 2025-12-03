@@ -1,5 +1,23 @@
 # Datasets
 
-TODO: descrivere quali dataset sono supportati (va bene anche un semplice elenco puntato), sia relativi ai dataset delle immagini (cifar10, cifar100, tiny-imagenet) che ai dataset_weigths (i vari zoo per capirci).
+## Supported datasets:
+- **Cifar10**
+- **MNIST**
+- **SVHN**
 
-Descrivere anche brevemente se c'è qualche passaggio da fare. Es. metti il link da dove scaricare uno zoo e scrivere in che cartella deve essere decompresso.
+All datasets are automatically downloaded and saved in `./data` through the Pytorch library `torchvision.datasets`.
+
+## Supported model zoos (and dataset weights):
+- **Cifar10 CNN-l**
+    Download link: https://zenodo.org/records/6620869/files/cifar_large_seed.zip?download=1
+
+- **Cifar10 CNN-s**
+    Download link: https://zenodo.org/records/6620869/files/cifar_small_seed.zip?download=1
+
+- **MNIST CNN-s**
+    Download link: https://zenodo.org/records/6632087/files/mnist_seed.zip?download=1
+
+- **SVHN CNN-s**
+    Download link: https://zenodo.org/records/6632121/files/svhn_seed.zip?download=1
+
+All the archives need to be downloaded from the link above and decompressed in `./checkpoints`.

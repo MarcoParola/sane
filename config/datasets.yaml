@@ -9,3 +9,15 @@ cifar100:
 tinyimagenet:
   num_classes: 200
   img_size: 64
+
+mnist:
+  num_classes: 10
+  img_size: 28
+
+svhn:
+  num_classes: 10
+  img_size: 32
+
+stl10:
+  num_classes: 10
+  img_size: 96

@@ -27,7 +27,7 @@ class ImgDataset(torch.utils.data.Dataset):
         return img, lbl
 
 
-def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.15):
+def load_dataset(dataset, data_dir, model=None, img_size=None, val_split=0.15, test_split=0.15):
     train, val, test = None, None, None
 
     torch.manual_seed(42)
@@ -41,17 +41,75 @@ def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.
 
     # CIFAR-10
     if dataset == 'cifar10':
+        if model == "small_cnn":
+            transform = transforms.Compose([
+                transforms.Resize((28, 28)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+        elif model == "large_cnn":
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+
         train = torchvision.datasets.CIFAR10(data_dir, train=True, download=True, transform=transform)
         test = torchvision.datasets.CIFAR10(data_dir, train=False, download=True, transform=transform)
 
         split = int(len(train) * val_split)
         train, val = torch.utils.data.random_split(train, [len(train) - split, split])
 
+        if model == "resnet":
+            train = ImgDataset(train)
+            val = ImgDataset(val)
+            test = ImgDataset(test)
+
+
     # CIFAR-100
     elif dataset == 'cifar100':
         train = torchvision.datasets.CIFAR100(data_dir, train=True, download=True, transform=transform)
         test = torchvision.datasets.CIFAR100(data_dir, train=False, download=True, transform=transform)
 
+        split = int(len(train) * val_split)
+        train, val = torch.utils.data.random_split(train, [len(train) - split, split])
+
+    # SVHN
+    elif dataset == 'svhn':
+        transform = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.CenterCrop(size=28),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5), (0.5))
+        ])
+        train = torchvision.datasets.SVHN(data_dir, split='train', download=True, transform=transform)
+        test = torchvision.datasets.SVHN(data_dir, split='test', download=True, transform=transform)
+        split = int(len(train) * val_split)
+        train, val = torch.utils.data.random_split(train, [len(train) - split, split])
+
+    # MNIST
+    elif dataset == 'mnist':
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307), (0.3081))
+        ])
+        train = torchvision.datasets.MNIST(data_dir, train=True, download=True, transform=transform)
+        test = torchvision.datasets.MNIST(data_dir, train=False, download=True, transform=transform)
+        split = int(len(train) * val_split)
+        train, val = torch.utils.data.random_split(train, [len(train) - split, split])
+
+    # STL10
+    elif dataset == 'stl10':
+        if model == "small_cnn":
+            resize_dim = 28
+        else:
+            resize_dim = 32
+        transform = transforms.Compose([
+            transforms.Resize((resize_dim, resize_dim)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+        ])
+        train = torchvision.datasets.STL10(data_dir, split='train', download=True, transform=transform)
+        test = torchvision.datasets.STL10(data_dir, split='test', download=True, transform=transform)
         split = int(len(train) * val_split)
         train, val = torch.utils.data.random_split(train, [len(train) - split, split])
 
@@ -103,10 +161,6 @@ def load_dataset(dataset, data_dir, img_size=None, val_split=0.15, test_split=0.
 
     else:
         raise ValueError(f'Unknown dataset: {dataset}')
-
-    train = ImgDataset(train)
-    val = ImgDataset(val)
-    test = ImgDataset(test)
 
     return train, val, test, None
 

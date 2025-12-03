@@ -109,7 +109,7 @@ class Tokenizer():
 
         return (tokens, masks, pos) if self.return_mask else (tokens, pos)    
 
-    def detokenize(self, tokens, pos, reference_checkpoint, ignore_bn=False):
+    def detokenize(self, tokens, pos, reference_checkpoint, ignore_pos=False, ignore_bn=False):
         """
         Detokenizes the given tokens and positions back to a checkpoint
         
@@ -117,6 +117,7 @@ class Tokenizer():
             tokens: sequence of tokenized weights
             pos: sequence of token positions
             reference_checkpoint: reference checkpoint to detokenize into.
+            ignore_pos: whether to ignore positions and detokenize sequentially.
             ignore_bn: whether to ignore batch normalization layers.
         
         Returns:
@@ -125,6 +126,7 @@ class Tokenizer():
         # make a copy of the reference checkpoint to prevent memory management issues
         checkpoint = copy.deepcopy(reference_checkpoint)
         idx = 0
+        start_idx=0
         for key in checkpoint.keys():
             if ("bn" in key or "downsample.1" in key or "batchnorm" in key) and ignore_bn:
                 continue
@@ -132,13 +134,16 @@ class Tokenizer():
             if "weight" in key or "running_mean" in key or "running_var" in key:
                 # get module shapes
                 mod_shape = checkpoint[key].shape
-
-                # get the number of tokens for this module
-                idx_channel = torch.where(pos[:, 1] == idx)[0]
-                w_t = torch.index_select(input=tokens, index=idx_channel, dim=0)
         
                 # calculate the content length of the module
                 contentlength = int(torch.prod(torch.tensor(mod_shape)) / mod_shape[0])
+
+                if ignore_pos:
+                    w_t = tokens[start_idx:start_idx+mod_shape[0],:]
+                else:
+                    # get the number of tokens for this module
+                    idx_channel = torch.where(pos[:, 1] == idx)[0]
+                    w_t = torch.index_select(input=tokens, index=idx_channel, dim=0)
 
                 # update the checkpoint with the detokenized weights
                 checkpoint[key] = w_t.view(mod_shape[0], -1)[:, :contentlength].view(mod_shape)
@@ -151,6 +156,8 @@ class Tokenizer():
                     checkpoint[key.replace("weight", "bias")] = w_t.view(mod_shape[0], -1)[:, contentlength]
 
                 # update counter
+                if ignore_pos:
+                    start_idx += mod_shape[0]
                 idx += 1
                 
         return checkpoint

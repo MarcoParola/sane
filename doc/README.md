@@ -56,12 +56,12 @@ In the `./scripts/` folder there are all independent files not involved in the m
 
 - `analyze_checkpoint_layers.py`: analyzes the layers of a model checkpoint and prints a summary of their counts and total parameters.
     ```
-    python -m scripts.check_tokenizer_output.py
+    python -m scripts.check_tokenizer_output
     ```
 
 - `from_torch_model_to_ptcheckpoint.py`: loads a model based on the given configuration, creates a checkpoint and saves the model's state dictionary as a pt checkpoint file.
     ```
-    python -m scripts.from_torch_model_to_ptcheckpoint.py
+    python -m scripts.from_torch_model_to_ptcheckpoint
     ```
 
 - `precompute_augmented_noisy_data.py`: generates multiple noisy model checkpoints by adding Gaussian noise to the weights and biases of a specified list of layers, saving each noise version in a dedicated directory. The latter is based on the model name, number of checkpoints and noise standard deviation, in the form:
@@ -71,5 +71,17 @@ In the `./scripts/` folder there are all independent files not involved in the m
     where `counter` is automatically incremented to avoid overwriting existing directories.
 
     ```
-    python -m scripts.precompute_augmented_noisy_data.py
+    python -m scripts.precompute_augmented_noisy_data
+    ```
+
+- `sparsify_zoo.py`: generates the sparsified version of a model zoo according to the pruning method and sparsity level specified in the hydra configuration, saving it in a dedicated directory which structure is consistent with the respective original model zoo. The directory for each sparsified zoo follows the following structure:
+    ```
+    checkpoints/sparsified_zoo/{model_name}_{dataset_name}_{pruning_method}_sparsity_{sparsity_level}/...
+    ```
+    Currently, the supported purning method are:
+    - **Global Magnitude** (sparsification.pruner="magnitude")
+    - **Layer-wise Optimal Brain Surgeon** (sparsification.pruner="l_obs")
+    - **WoodFisher** (sparsification.pruner="woodfisher")
+    ```
+    python -m scripts.sparsify_zoo
     ```

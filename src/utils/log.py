@@ -11,7 +11,8 @@ def get_loggers(cfg, run_group=None, run_name=None):
         wandb_logger = WandbLogger(
             project = cfg.wandb.project,
             name = run_name,
-            group = run_group
+            group = run_group,
+            reinit = True
         )
         loggers.append(wandb_logger)
 

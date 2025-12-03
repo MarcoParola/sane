@@ -7,7 +7,7 @@ from src.models.sane.positional_embs import PositionalEmbs
 from src.models.sane.projection_head import ProjectionHead
 
 
-class Sane(L.LightningModule):
+class SparsifiSane(L.LightningModule):
     def __init__(self, conf: dict = None,
                  idim: int = 288, edim: int = 2048, n_head: int = 16, n_blocks: int = 8,
                  latdim: int = 128, wsize: int = 256, dropout: float = 0.0,
@@ -89,9 +89,14 @@ class Sane(L.LightningModule):
         return x.mean(dim=1)
     
     def _common_step(self, batch, batch_idx, stage):
-        t, m, p = batch
+        t, st, m, p = batch
         z, y, zp = self(t, p, m=None)
-        loss = self.criterion(y, t, m)
+        recon_loss = self.criterion(y, st, m)
+
+        # L1 sparsity regularization
+        sparsity_loss = 1e-3 * y.abs().mean()  # adjust factor as needed
+        loss = recon_loss + sparsity_loss
+
         self.log(f"{stage}_loss", loss, on_epoch=True, on_step=False, prog_bar=True)
         return loss 
 
@@ -109,7 +114,7 @@ class Sane(L.LightningModule):
         self._test_embeddings.clear()
 
     def test_step(self, batch, batch_idx):
-        self._common_step(batch, batch_idx, "test")
+        #self._common_step(batch, batch_idx, "test")
         t, m, p = batch
         z, y, zp = self(t, p, m=None)
         self._test_reconwindows.append(y.detach().cpu().reshape(y.shape[0]*y.shape[1], -1))

@@ -1,14 +1,15 @@
 defaults:
 - _self_
 - datasets
+- zoos
 
 data_dir: data
 
 model:
-  name: resnet18
+  name: small_cnn
   
 dataset:
-  name: tinyimagenet
+  name: cifar10
 
 checkpoint: resnet18_cifar10
 
@@ -30,16 +31,21 @@ training:
   num_workers: 4 
   loss_reduction: "mean"
   n_epochs: 1000
-  patience: 50
+  patience: 10
 
 test:
   test_error: False
   reconstruction_error: True
+  sane_checkpoint_path: "out/zoo_magnitude_50%_small_cnn_cifar10_base/sane_base/zoo_magnitude_50%_small_cnn_cifar10_base_sws4_b2_e256_h2/best/sane-epoch=468-val_loss=0.0193.ckpt"
 
 augmentation:
   noise_std: 0.01
   layers_to_noise: ['layer4', 'fc']
   n_checkpoints: 3
+
+sparsification:
+  pruner: "magnitude"
+  sparsity_level: 0.5
 
 optimizer:
   lr: 1e-4
@@ -47,8 +53,10 @@ optimizer:
   scheduler: "OneCycleLR"
 
 experiment:
-  mode: "base"
-  zoo: False
+  mode: "base" # "base" or "augmented"
+  zoo: True
+  noise_percentage: 0.02
+  sparsification: True
 
 log:
   dir: "./logs"

@@ -169,6 +169,7 @@ logs/
 outputs/
 lightning_logs/
 wandb/
+src/models/pruners/l_obs/hessians
 
 *.log
 *.pth

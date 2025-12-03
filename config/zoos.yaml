@@ -1,0 +1,17 @@
+small_cnn_cifar10:
+  zoo_path: checkpoints/tune_zoo_cifar10_uniform_small
+
+large_cnn_cifar10:
+  zoo_path: checkpoints/tune_zoo_cifar10_uniform_large
+
+small_cnn_mnist:
+  zoo_path: checkpoints/tune_zoo_mnist_uniform
+
+small_cnn_stl10:
+  zoo_path: checkpoints/tune_zoo_stl_small_uniform
+
+large_cnn_stl10:
+  zoo_path: checkpoints/tune_zoo_stl_uniform_large
+
+small_cnn_svhn:
+  zoo_path: checkpoints/tune_zoo_svhn_uniform
