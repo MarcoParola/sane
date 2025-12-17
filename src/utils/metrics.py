@@ -72,26 +72,29 @@ class ClassificationMetrics():
 
 class SparsificationMetrics():
     
-    def __init__(self, original_checkpoint, sparsified_checkpoint, original_accuracy: float, sparsified_accuracy: float, device: str):
+    def __init__(self, original_checkpoint, sparsified_checkpoint, original_accuracy: float, sparsified_accuracy: float, device: str, tau: float = 1e-2):
         self.device = device
-
-        
-        self.original_size = self._state_dict_size(original_checkpoint)
-        self.compressed_size = self._state_dict_size(sparsified_checkpoint)
-
+        self.tau = tau
+        self.checkpoint = sparsified_checkpoint
         self.original_accuracy = original_accuracy
         self.sparsified_accuracy = sparsified_accuracy
 
-    @staticmethod
-    def _state_dict_size(state_dict: dict) -> float:
-        total_bytes = 0
-        for param_tensor in state_dict.values():
-            non_zero_elements = torch.count_nonzero(param_tensor).item()
-            total_bytes += non_zero_elements * param_tensor.element_size()
-        return total_bytes
-
     def compression_ratio(self) -> float:
-        return self.original_size / self.compressed_size
+        total_params = 0
+        small_params = 0
+
+        for name, tensor in self.checkpoint.items():
+            if not torch.is_tensor(tensor):
+                continue  # skip non-tensor entries
+
+            total_params += tensor.numel()
+            small_params += (tensor.abs() <= self.tau).sum().item()
+
+        sparsity = small_params / total_params
+        
+        compression_rate = 1 / (1-sparsity)
+
+        return compression_rate
     
     def accuracy_retention(self) -> float:
         return self.sparsified_accuracy / self.original_accuracy

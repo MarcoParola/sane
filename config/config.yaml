@@ -36,7 +36,7 @@ training:
 test:
   test_error: False
   reconstruction_error: True
-  sane_checkpoint_path: "out/zoo_magnitude_50%_small_cnn_cifar10_base/sane_base/zoo_magnitude_50%_small_cnn_cifar10_base_sws4_b2_e256_h2/best/sane-epoch=468-val_loss=0.0193.ckpt"
+  sane_checkpoint_path: "checkpoints/maskpredictor/maskpredictor-epoch=91-val_loss=0.1442.ckpt"
 
 augmentation:
   noise_std: 0.01
@@ -44,7 +44,7 @@ augmentation:
   n_checkpoints: 3
 
 sparsification:
-  pruner: "magnitude"
+  pruner: "random" # "magnitude" or "random" or "l_obs" or "woodfisher" or "chita"
   sparsity_level: 0.5
 
 optimizer:
@@ -57,6 +57,7 @@ experiment:
   zoo: True
   noise_percentage: 0.02
   sparsification: True
+  sparsities: [0.5, 0.8]
 
 log:
   dir: "./logs"
