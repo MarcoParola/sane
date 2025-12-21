@@ -28,7 +28,7 @@ class SaneMaskPredictor(L.LightningModule):
         self.projection_head = torch.nn.Sequential(
             torch.nn.Linear(latdim, edim),
             torch.nn.ReLU(),
-            torch.nn.Linear(edim, idim),  # output matches idim for full mask
+            torch.nn.Linear(edim, idim)
         )
         self.dropout = torch.nn.Dropout(dropout)
 
@@ -46,6 +46,8 @@ class SaneMaskPredictor(L.LightningModule):
 
         # test-time collectors
         self._test_masks: list[torch.Tensor] = []
+        self._test_tokens: list[torch.Tensor] = []
+        self._test_positions: list[torch.Tensor] = []
 
     
     def _init_weights(self, module):
@@ -112,11 +114,15 @@ class SaneMaskPredictor(L.LightningModule):
     
     def on_test_start(self):
         self._test_masks.clear()
+        self._test_tokens.clear()
+        self._test_positions.clear()
 
     def test_step(self, batch, batch_idx):
         t, m, p = batch
         _, mask_logits = self(t, p, m=None)
         self._test_masks.append(mask_logits.detach().cpu().reshape(-1, mask_logits.shape[-1]))
+        self._test_tokens.append(t.detach().cpu().reshape(-1, t.shape[-1]))
+        self._test_positions.append(p.detach().cpu().reshape(-1, p.shape[-1]))
 
     def configure_optimizers(self):
         trainable_params = {pn: p for pn,p in self.named_parameters() if p.requires_grad}
@@ -139,7 +145,8 @@ class SaneMaskPredictor(L.LightningModule):
         return [optimizer], [lr_scheduler_config]
     
 
-    def get_test_masks(self):
-        if not self._test_masks:
-            return torch.empty(0)
-        return torch.cat(self._test_masks, dim=0)
+    def get_test_outputs(self):    
+        masks = torch.cat(self._test_masks, dim=0) if self._test_masks else torch.empty(0)
+        tokens = torch.cat(self._test_tokens, dim=0) if self._test_tokens else torch.empty(0)
+        pos = torch.cat(self._test_positions, dim=0) if self._test_positions else torch.empty(0)
+        return masks, tokens, pos

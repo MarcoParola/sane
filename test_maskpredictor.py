@@ -5,21 +5,23 @@ from lightning.pytorch import Trainer
 from src.utils.log import get_loggers
 from src.datasets.weights.tokenized_model_weights import TokenizedModelWeightDataset, TokenizedAlignedZooDataset
 from src.utils.tokenizer import Tokenizer
-from pathlib import Path 
 from src.models.utils import load_model
+from src.datasets.utils import load_dataset
 import wandb
 from lightning.pytorch.loggers import WandbLogger
 from src.utils.weight_matching import permute_model_zoo
+from test_classifier import test_classifier
+from src.utils.metrics import SparsificationMetrics
 
-def generate_test_mask(cfg, original_checkpoint, tokenizer, trainer, sane_model, i):
+def generate_test_mask(cfg, original_checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics):
     testset = TokenizedModelWeightDataset(original_checkpoint, tokenizer, cfg.transformer.blocksize)
     testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers, persistent_workers=True)
     trainer.test(sane_model, dataloaders=testloader)
-    mask_logits = sane_model.get_test_masks()
+    
+    mask_logits, tokens, positions = sane_model.get_test_outputs()
     mask_probs = torch.sigmoid(mask_logits)
     binary_mask = (mask_probs > 0.5).float()
 
-    # classification task
     print(f"Injected Model {i}:")
 
     total = binary_mask.numel()
@@ -28,13 +30,28 @@ def generate_test_mask(cfg, original_checkpoint, tokenizer, trainer, sane_model,
 
     print(f"Sparsity: {sparsity:.2f}%")
 
+    # apply mask to checkpoint
+    assert tokens.shape == binary_mask.shape
+    masked_tokens = tokens * binary_mask
+
+    masked_checkpoint = tokenizer.detokenize(masked_tokens, positions, original_checkpoint, ignore_pos=True)
+    classifier_network.load_state_dict(masked_checkpoint)
+    classifier_network.eval()
+    injected_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
+
+    sparsification_metrics = SparsificationMetrics(original_checkpoint, masked_checkpoint, original_metrics.accuracy(), injected_metrics.accuracy(), device)
+
     # layer by layer histogram plotting
     if trainer.logger:
         print("\nLogging...")
         wandb_run = trainer.logger.experiment
+        wandb_run.log({"Original_Acc": original_metrics.accuracy()})
+        wandb_run.log({"Injected_Acc": injected_metrics.accuracy()})
+        wandb_run.log({"Acc_Retention": sparsification_metrics.accuracy_retention()})
+        wandb_run.log({"Compression_Ratio": sparsification_metrics.compression_ratio()})
         wandb_run.log({"Sparsity": sparsity})
 
-    return sparsity
+    return sparsification_metrics.accuracy_retention(), sparsification_metrics.compression_ratio(), original_metrics.accuracy(), injected_metrics.accuracy(), sparsity
 
 
 @hydra.main(config_path="config", config_name="config", version_base=None)
@@ -85,12 +102,17 @@ def main(cfg):
     if cfg.test.reconstruction_error:
         print("\nTesting mask generation task...")
         test_indices = list(range(860,880))
-        #sane_model.projection_head.head[0] = torch.nn.Linear(6144, 30, bias=False)  # adjust projection head for CNNs weights size
 
         # classification task preparation
         model_name = cfg.model.name
         dataset_name = cfg.dataset.name
+        n_classes = cfg[dataset_name].num_classes
+        img_size = cfg[dataset_name].img_size
+        batch_size = cfg.training.batch_size
         device = cfg.training.device
+        data_dir = cfg.data_dir
+
+        train, val, test, remapping = load_dataset(dataset_name, data_dir, model_name, img_size)
 
         print(f"\nModel: {model_name} \nDataset: {dataset_name}")
         classifier_network = load_model(model_name, dataset_name).to(device)
@@ -98,6 +120,10 @@ def main(cfg):
         print("\nTesting reconstruction and predictions")
         # Iterate on selected split indices
         counter = 0
+        compression_rates = []
+        accuracy_retentions = []
+        original_accuracies = []
+        injected_accuracies = []
         sparsities = []
         for i in test_indices:
             counter += 1
@@ -115,12 +141,21 @@ def main(cfg):
             print("\nOriginal Model:")
             classifier_network.load_state_dict(checkpoint)
             classifier_network.eval()
+            original_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
 
             print(f"\nReconstructing model {i}")
-            sparsity = generate_test_mask(cfg, checkpoint, tokenizer, trainer, sane_model, i)
-            sparsities.append(sparsity)
-        
-        print(f"\nAverage relative error: {(sum(sparsities) / len(sparsities))*100:.2f}%")
+            current_acc_ret, current_compression_ratio, current_orig_acc, current_inj_acc, current_sparsity = generate_test_mask(cfg, checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics)
+            accuracy_retentions.append(current_acc_ret)
+            compression_rates.append(current_compression_ratio)
+            original_accuracies.append(current_orig_acc)
+            injected_accuracies.append(current_inj_acc)
+            sparsities.append(current_sparsity)
+
+        print(f"\nAverage original accuracy: {(sum(original_accuracies) / len(original_accuracies))*100:.2f}%")
+        print(f"\nAverage injected accuracy: {(sum(injected_accuracies) / len(injected_accuracies))*100:.2f}%")
+        print(f"\nAverage accuracy retention: {(sum(accuracy_retentions) / len(accuracy_retentions))*100:.2f}%")
+        print(f"\nAverage compression rate: {(sum(compression_rates) / len(compression_rates)):.2f}x")
+        print(f"\nAverage sparsity: {(sum(sparsities) / len(sparsities)):.2f}%")
 
 
 
