@@ -185,7 +185,7 @@ def permute_original_and_sparsified_zoo(original_zoo_path: str, sparsified_zoo_p
     if model_name == "small_cnn":
         ps = small_cnn_permutation_spec()
     elif model_name == "large_cnn":
-        ps = large_cnn_permutation_spec
+        ps = large_cnn_permutation_spec()
 
     params_a = {k: v.detach().clone().to(device)
                 for k, v in original_model_zoo[0].state_dict().items()}

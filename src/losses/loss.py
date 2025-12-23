@@ -131,6 +131,24 @@ class NormalizedMaskedReconLoss(torch.nn.Module):
         return loss
 
 
+class MaskPredictionLoss(torch.nn.Module):
+    """
+    Loss for predicting whether target values are zero (mask=0) or non-zero (mask=1)
+    using Binary Cross Entropy.
+    """
+    def __init__(self, reduction: str = "mean"):
+        super(MaskPredictionLoss, self).__init__()
+        self.bce = torch.nn.BCEWithLogitsLoss(reduction=reduction)
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor):
+
+        assert pred.shape == target.shape, \
+            f"Shape mismatch. output {pred.shape} vs target {target.shape}"
+
+        loss = self.bce(pred, target)
+        return loss
+
+
 class GammaContrastReconLoss(torch.nn.Module):
     def __init__(
         self, gamma: float, reduction: str, temperature: float, contrast: str = "simclr", 
