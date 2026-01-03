@@ -146,14 +146,17 @@ class Tokenizer():
                     w_t = torch.index_select(input=tokens, index=idx_channel, dim=0)
 
                 # update the checkpoint with the detokenized weights
-                checkpoint[key] = w_t.view(mod_shape[0], -1)[:, :contentlength].view(mod_shape)
+                w_flat = w_t.view(mod_shape[0], -1)
+                checkpoint[key] = w_flat[:, :contentlength].view(mod_shape)
 
                 # Keep running var > 0
                 if "running_var" in key: checkpoint[key] = checkpoint[key].clamp(min=0)
 
                 # check for biases
                 if "weight" in key and key.replace("weight", "bias") in checkpoint:
-                    checkpoint[key.replace("weight", "bias")] = w_t.view(mod_shape[0], -1)[:, contentlength]
+                    # Only extract bias if it exists in the tokenized data
+                    if w_flat.shape[1] > contentlength:
+                        checkpoint[key.replace("weight", "bias")] = w_flat[:, contentlength]
 
                 # update counter
                 if ignore_pos:
