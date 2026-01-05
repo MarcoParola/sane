@@ -226,8 +226,12 @@ class CustomSparsitySaneMaskPredictor(L.LightningModule):
         z, mask_pred = self(t, p, m=None)
 
         mask_target = (st != 0).float()
+        target_sparsity = st[0].mean()
         
-        loss = self.criterion(mask_pred[1:], mask_target[1:]) + self.mse(t[0], st[0])
+        mask_probs = torch.sigmoid(mask_pred[1:])
+        pred_sparsity = 1.0 - mask_probs.mean()
+        
+        loss = self.criterion(mask_pred[1:], mask_target[1:]) + self.mse(pred_sparsity, target_sparsity)
 
         self.log(f"{stage}_loss", loss, on_epoch=True, on_step=False, prog_bar=True)
         return loss 
