@@ -19,8 +19,16 @@ def generate_test_mask(cfg, original_checkpoint, tokenizer, trainer, sane_model,
     trainer.test(sane_model, dataloaders=testloader)
     
     mask_logits, tokens, positions = sane_model.get_test_outputs()
-    mask_probs = torch.sigmoid(mask_logits[1:])
-    binary_mask = (mask_probs > 0.5).float()
+    #mask_probs = torch.sigmoid(mask_logits[1:])
+    #binary_mask = (mask_probs > 0.5).float()
+    
+    scores = mask_logits[1:].view(-1)
+    density = 1.0 - target_sparsity
+    k = int(density * scores.numel())
+    _, topk_indices = torch.topk(scores, k)
+    binary_mask = torch.zeros_like(scores)
+    binary_mask[topk_indices] = 1.0
+    binary_mask = binary_mask.view(mask_logits[1:].shape)
 
     print(f"Injected Model {i}:")
 
