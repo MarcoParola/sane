@@ -117,7 +117,8 @@ def permute_model_zoo(zoo_path: str, model_name: str, dataset_name: str, device=
             current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
             if current_checkpoint_path.exists():
                 model = load_model(model_name, dataset_name)
-                checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                checkpoint = torch.load(current_checkpoint_path, map_location="cpu", weights_only=False)
+                #checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                 model.load_state_dict(checkpoint)
                 counter = counter+1
                 print(f"\rLoaded {counter} model(s)", end='', flush=True)
@@ -132,7 +133,7 @@ def permute_model_zoo(zoo_path: str, model_name: str, dataset_name: str, device=
     if model_name == "small_cnn":
         ps = small_cnn_permutation_spec()
     elif model_name == "large_cnn":
-        ps = large_cnn_permutation_spec
+        ps = large_cnn_permutation_spec()
 
     for params_b in params_list[1:]:
         perm = weight_matching(ps, params_a, params_b, device=device)
@@ -159,7 +160,8 @@ def permute_original_and_sparsified_zoo(original_zoo_path: str, sparsified_zoo_p
             current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
             if current_checkpoint_path.exists():
                 model = load_model(model_name, dataset_name)
-                checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                checkpoint = torch.load(current_checkpoint_path, map_location="cpu", weights_only=False)
+                #checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                 model.load_state_dict(checkpoint)
                 counter = counter+1
                 print(f"\rLoaded {counter} model(s)", end='', flush=True)
@@ -174,7 +176,8 @@ def permute_original_and_sparsified_zoo(original_zoo_path: str, sparsified_zoo_p
             current_checkpoint_path = folder / "checkpoint_000050/checkpoints"
             if current_checkpoint_path.exists():
                 model = load_model(model_name, dataset_name)
-                checkpoint = torch.load(current_checkpoint_path, weights_only=False)
+                checkpoint = torch.load(current_checkpoint_path, map_location="cpu", weights_only=False)
+                #checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                 model.load_state_dict(checkpoint)
                 counter = counter+1
                 print(f"\rLoaded {counter} model(s)", end='', flush=True)

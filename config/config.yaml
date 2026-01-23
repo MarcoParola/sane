@@ -36,7 +36,7 @@ training:
 test:
   test_error: False
   reconstruction_error: True
-  sane_checkpoint_path: "checkpoints/maskpredictor/maskpredictor-epoch=91-val_loss=0.1442.ckpt"
+  sane_checkpoint_path: "checkpoints/maskpredictor/custom_spars-maskpredictor-mnist-epoch=71-val_loss=0.1197.ckpt"
 
 augmentation:
   noise_std: 0.01
@@ -57,7 +57,8 @@ experiment:
   zoo: True
   noise_percentage: 0.02
   sparsification: True
-  sparsities: [0.5, 0.8]
+  sparsities: [0.3, 0.5, 0.8]
+  target_sparsity: 0.3
 
 log:
   dir: "./logs"
