@@ -7,6 +7,7 @@ from src.models.pruners.l_obs.prune_small_cnn import prune_small_cnn
 from src.models.pruners.l_obs.prune_large_cnn import prune_large_cnn
 from src.models.pruners.woodfisher.run import run_woodfisher
 from src.models.pruners.chita.run import run_chita
+import time
 
 def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name, data_dir, model_name, img_size, device):
     if pruner_type == "magnitude":
@@ -18,9 +19,9 @@ def prune_model(model, pruner_type, sparsity_level, store_location, dataset_name
         torch.save(model.state_dict(), store_location / "checkpoints")
     elif pruner_type == "l_obs":
         if model_name == "small_cnn":
-            prune_small_cnn(store_location, model, dataset_name, data_dir, model_name, img_size)
+            prune_small_cnn(store_location, model, dataset_name, data_dir, model_name, img_size, sparsity_level)
         elif model_name == "large_cnn":
-            prune_large_cnn(store_location, model, dataset_name, data_dir, model_name, img_size)
+            prune_large_cnn(store_location, model, dataset_name, data_dir, model_name, img_size, sparsity_level)
     elif pruner_type == "woodfisher":
         run_woodfisher(model, dataset_name, data_dir, model_name, img_size, sparsity_level, device)
         torch.save(model.state_dict(), store_location / "checkpoints")
@@ -56,10 +57,7 @@ def main(cfg):
     sparsified_zoo_path = Path("checkpoints/sparsified_zoos/" + zoo_name + f"_{pruner}_sparsity_{cfg.sparsification.sparsity_level}") 
     os.makedirs(sparsified_zoo_path, exist_ok=True)
 
-    if pruner == "magnitude":
-        print(f"Sparsifying {zoo_name} models with {pruner} pruner at sparsity level {cfg.sparsification.sparsity_level}")
-    elif pruner == "l_obs":
-        print(f"Sparsifying {zoo_name} models with {pruner} pruner at sparsity levels 0.3, 0.5 and 0.8 ")
+    print(f"Sparsifying {zoo_name} models with {pruner} pruner at sparsity level {cfg.sparsification.sparsity_level}")
         
     counter = 0
     for folder in zoo_path.iterdir():
@@ -74,8 +72,11 @@ def main(cfg):
                 checkpoint = torch.load(current_checkpoint_path, weights_only=False)
                 model.load_state_dict(checkpoint)
                 os.makedirs(store_location, exist_ok=True)
+                start_time = time.perf_counter()
                 prune_model(model, pruner, cfg.sparsification.sparsity_level, store_location, dataset_name, data_dir, model_name, img_size, device)
+                end_time = time.perf_counter()
                 counter = counter+1
+                print(f"Time taken to sparsify first model: {end_time - start_time:.2f} seconds")
                 print(f"\rSparsified {counter} model(s)", end='', flush=True)
     print()    
 

@@ -12,8 +12,11 @@ from lightning.pytorch.loggers import WandbLogger
 from src.utils.weight_matching import permute_model_zoo
 from test_classifier import test_classifier
 from src.utils.metrics import SparsificationMetrics
+import time
+from pathlib import Path
 
 def generate_test_mask(cfg, original_checkpoint, tokenizer, trainer, sane_model, classifier_network, test, n_classes, batch_size, device, remapping, i, original_metrics, target_sparsity):
+    start_time = time.perf_counter()
     testset = CustomSparsityModelDataset(original_checkpoint, target_sparsity, tokenizer, cfg.transformer.blocksize)
     testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=cfg.training.batch_size, shuffle=False, num_workers=cfg.training.num_workers, persistent_workers=True)
     trainer.test(sane_model, dataloaders=testloader)
@@ -43,6 +46,13 @@ def generate_test_mask(cfg, original_checkpoint, tokenizer, trainer, sane_model,
     masked_tokens = tokens[1:] * binary_mask
 
     masked_checkpoint = tokenizer.detokenize(masked_tokens, positions[1:], original_checkpoint, ignore_pos=True)
+    injected_checkpoint_location = Path(f"checkpoints/maskpredictor/injections/")
+    injected_checkpoint_location.mkdir(777, parents=True, exist_ok=True)
+    injected_checkpoint_location = injected_checkpoint_location.joinpath(f"model_{i}.pt")
+    torch.save(masked_checkpoint, injected_checkpoint_location)
+    end_time = time.perf_counter()
+    print(f"Mask generation and application time: {end_time - start_time:.2f} seconds")
+
     classifier_network.load_state_dict(masked_checkpoint)
     classifier_network.eval()
     injected_metrics = test_classifier(classifier_network, test, n_classes, batch_size, device, remapping)
